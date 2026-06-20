@@ -16,7 +16,7 @@ type RequestWithParams = Request & {
 
 const getTelegramFileInfo = async (telegramFileId: string, public_id: string) => {
   const cacheKey = `file_info_${telegramFileId}`;
-  let fileInfo = fileInfoCache.get(cacheKey);
+  let fileInfo = fileInfoCache.get(cacheKey) as any;
 
   if (!fileInfo) {
     fileInfo = await getFileInfo(telegramFileId);
@@ -26,7 +26,7 @@ const getTelegramFileInfo = async (telegramFileId: string, public_id: string) =>
     logger.debug('File info from cache', { public_id, cacheKey });
   }
 
-  return fileInfo;
+  return fileInfo as { file_size: number; mime_type: string; file_path: string; bot_token: string };
 };
 
 const buildTelegramFileUrl = (filePath: string, botToken: string): string =>

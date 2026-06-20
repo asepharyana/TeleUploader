@@ -241,27 +241,35 @@ export const forwardMediaGroupToStorage = async (
 };
 
 export const getFileInfo = async (telegramFileId: string): Promise<TelegramFileInfo> => {
-  try {
-    const { result, botToken } = await executeWithBotRetry<FileInfoResult>(
-      async (activeBot, activeToken) => ({
-        result: await activeBot.telegram.getFile(telegramFileId),
-        botToken: activeToken,
-      }),
-    );
-
-    const fileData = result as unknown as TelegramFileInfo;
-    return {
-      file_size: fileData.file_size || 0,
-      mime_type: fileData.mime_type || 'application/octet-stream',
-      file_path: fileData.file_path || '',
-      bot_token: botToken,
-    };
-  } catch (error: unknown) {
-    logger.error('Failed to get file info', {
-      error: error instanceof Error ? error.message : String(error),
-    });
-    throw error;
+  let lastError: unknown;
+  for (const activeBot of bots) {
+    try {
+      const result = await activeBot.telegram.getFile(telegramFileId);
+      const fileData = result as unknown as Omit<TelegramFileInfo, 'bot_token'>;
+      return {
+        file_size: fileData.file_size || 0,
+        mime_type: fileData.mime_type || 'application/octet-stream',
+        file_path: fileData.file_path || '',
+        bot_token: activeBot.telegram.token,
+      };
+    } catch (error: unknown) {
+      lastError = error;
+      const errorStr = error instanceof Error ? error.message : String(error);
+      if (
+        errorStr.includes('wrong file_id') ||
+        errorStr.includes('file is temporarily unavailable') ||
+        errorStr.includes('retry after')
+      ) {
+        continue;
+      }
+      throw error;
+    }
   }
+
+  logger.error('Failed to get file info from any bot', {
+    error: lastError instanceof Error ? lastError.message : String(lastError),
+  });
+  throw lastError;
 };
 
 export const getBot = (): Telegraf => bots[nextBotIndex];

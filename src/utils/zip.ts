@@ -1,4 +1,6 @@
+import { once } from 'node:events';
 import { createReadStream, createWriteStream } from 'node:fs';
+import { finished } from 'node:stream/promises';
 import { open, stat } from 'node:fs/promises';
 import { basename } from 'node:path';
 import { nanoid } from 'nanoid';
@@ -65,18 +67,13 @@ const writeChunk = async (
   chunk: Buffer,
 ): Promise<void> => {
   if (!writer.write(chunk)) {
-    await new Promise<void>((resolve, reject) => {
-      writer.once('drain', resolve);
-      writer.once('error', reject);
-    });
+    await once(writer, 'drain');
   }
 };
 
 const finishWriter = async (writer: ReturnType<typeof createWriteStream>): Promise<void> => {
-  await new Promise<void>((resolve, reject) => {
-    writer.end(() => resolve());
-    writer.once('error', reject);
-  });
+  writer.end();
+  await finished(writer);
 };
 
 export const sanitizeZipEntryName = (fileName: string, usedNames = new Set<string>()): string => {
@@ -102,16 +99,10 @@ export const sanitizeZipEntryName = (fileName: string, usedNames = new Set<strin
 
 const calculateFileCrc32 = async (tempPath: string): Promise<number> => {
   let crc = 0xffffffff;
-
-  await new Promise<void>((resolve, reject) => {
-    const reader = createReadStream(tempPath);
-    reader.on('data', (chunk: Buffer) => {
-      crc = updateCrc32(crc, chunk);
-    });
-    reader.once('end', resolve);
-    reader.once('error', reject);
-  });
-
+  const reader = createReadStream(tempPath);
+  for await (const chunk of reader) {
+    crc = updateCrc32(crc, chunk as Buffer);
+  }
   return (crc ^ 0xffffffff) >>> 0;
 };
 
@@ -154,14 +145,10 @@ export const createZip = async (files: ZipInputFile[]): Promise<CreatedZip> => {
       ]);
 
       await writeHashed(localHeader);
-      await new Promise<void>((resolve, reject) => {
-        const reader = createReadStream(file.tempPath);
-        reader.on('data', (chunk: Buffer) => {
-          void writeHashed(chunk).catch(reject);
-        });
-        reader.once('end', resolve);
-        reader.once('error', reject);
-      });
+      const reader = createReadStream(file.tempPath);
+      for await (const chunk of reader) {
+        await writeHashed(chunk as Buffer);
+      }
 
       entries.push({
         fileName: file.fileName,
