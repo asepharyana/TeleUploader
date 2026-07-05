@@ -47,6 +47,9 @@ mock.module('../src/routes/health', () => ({
 
 mock.module('../src/utils/rateLimit', () => ({
   cleanupRateLimitCache: mock(),
+  withRateLimit: <T extends Request>(
+    handler: (req: T) => Promise<Response>,
+  ): ((req: T) => Promise<Response>) => handler,
 }));
 
 describe('Bootstrap Server', () => {

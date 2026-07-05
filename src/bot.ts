@@ -42,6 +42,15 @@ export const startBot = async (): Promise<Telegraf<Context>> => {
       );
     });
 
+    // Logging middleware must be registered BEFORE the media handler so all events are captured
+    bot.use((ctx, next) => {
+      logger.info('Telegram event received', {
+        type: 'type' in ctx.update ? ctx.update.type : undefined,
+        chat_id: ctx.chat?.id,
+      });
+      return next();
+    });
+
     const mediaBot = bot as unknown as MediaEventRegistrar;
     mediaBot.on(
       ['document', 'photo', 'video', 'audio', 'voice', 'animation', 'sticker', 'video_note'],
@@ -115,14 +124,6 @@ export const startBot = async (): Promise<Telegraf<Context>> => {
         }
       },
     );
-
-    bot.use((ctx, next) => {
-      logger.info('Telegram event received', {
-        type: 'type' in ctx.update ? ctx.update.type : undefined,
-        chat_id: ctx.chat?.id,
-      });
-      return next();
-    });
 
     await bot.launch();
 

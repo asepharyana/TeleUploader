@@ -21,14 +21,6 @@ CREATE TABLE IF NOT EXISTS files (
   updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
-ALTER TABLE files ADD COLUMN IF NOT EXISTS file_hash VARCHAR;
-ALTER TABLE files ADD COLUMN IF NOT EXISTS archive_telegram_file_id VARCHAR;
-ALTER TABLE files ADD COLUMN IF NOT EXISTS archive_storage_message_id BIGINT;
-ALTER TABLE files ADD COLUMN IF NOT EXISTS archive_file_name VARCHAR;
-ALTER TABLE files ADD COLUMN IF NOT EXISTS archive_entry_name VARCHAR;
-ALTER TABLE files ADD COLUMN IF NOT EXISTS archive_mime_type VARCHAR;
-ALTER TABLE files ADD COLUMN IF NOT EXISTS archive_size_bytes BIGINT;
-
 CREATE INDEX IF NOT EXISTS idx_files_public_id ON files(public_id);
 CREATE INDEX IF NOT EXISTS idx_files_telegram_file_id ON files(telegram_file_id);
 CREATE INDEX IF NOT EXISTS idx_files_file_hash ON files(file_hash);

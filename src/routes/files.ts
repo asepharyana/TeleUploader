@@ -1,11 +1,11 @@
 import { createReadStream } from 'node:fs';
-import { unlink } from 'node:fs/promises';
 import { nanoid } from 'nanoid';
 import { findFileByPublicId } from '../db/files';
 import { fileInfoCache } from '../utils/cache';
-import { formatCreatedAt, getErrorMessage } from '../utils/file';
+import { cleanupTempFile, formatCreatedAt, getErrorMessage } from '../utils/file';
 import logger from '../utils/logger';
-import { getFileInfo } from '../utils/telegram';
+import { metricsCollector } from '../utils/metrics';
+import { getFileInfo, type TelegramFileInfo } from '../utils/telegram';
 import { locateZipEntry } from '../utils/zip';
 
 type RequestWithParams = Request & {
@@ -16,29 +16,23 @@ type RequestWithParams = Request & {
 
 const getTelegramFileInfo = async (telegramFileId: string, public_id: string) => {
   const cacheKey = `file_info_${telegramFileId}`;
-  let fileInfo = fileInfoCache.get(cacheKey) as any;
+  let fileInfo = fileInfoCache.get(cacheKey) as TelegramFileInfo | null;
 
   if (!fileInfo) {
+    metricsCollector.recordCacheMiss();
     fileInfo = await getFileInfo(telegramFileId);
     fileInfoCache.set(cacheKey, fileInfo);
     logger.debug('File info cached', { public_id, cacheKey });
   } else {
+    metricsCollector.recordCacheHit();
     logger.debug('File info from cache', { public_id, cacheKey });
   }
 
-  return fileInfo as { file_size: number; mime_type: string; file_path: string; bot_token: string };
+  return fileInfo;
 };
 
 const buildTelegramFileUrl = (filePath: string, botToken: string): string =>
   `https://api.telegram.org/file/bot${botToken}/${filePath}`;
-
-const cleanupTempFile = async (tempPath: string): Promise<void> => {
-  try {
-    await unlink(tempPath);
-  } catch (err) {
-    logger.warn('Failed to cleanup temp file', { tempPath, error: getErrorMessage(err) });
-  }
-};
 
 const sanitizeFilenameHeader = (fileName: string): string =>
   fileName.replace(/[\\"]/g, '').replace(/[\n\r]/g, '');
@@ -93,7 +87,7 @@ export const handleFileRedirect = async (req: RequestWithParams): Promise<Respon
         void cleanupTempFile(tempZipPath);
       });
 
-      return new Response(fileStream as any, {
+      return new Response(fileStream as unknown as ReadableStream, {
         status: 200,
         headers: {
           'Content-Type': file.mimeType || 'application/octet-stream',

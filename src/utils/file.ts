@@ -1,5 +1,16 @@
+import { unlink } from 'node:fs/promises';
+import logger from './logger';
+
 export const getErrorMessage = (error: unknown): string => {
   return error instanceof Error ? error.message : String(error);
+};
+
+export const cleanupTempFile = async (tempPath: string): Promise<void> => {
+  try {
+    await unlink(tempPath);
+  } catch (err) {
+    logger.warn('Failed to cleanup temp file', { tempPath, error: getErrorMessage(err) });
+  }
 };
 
 interface FileMetadata {

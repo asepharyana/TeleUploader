@@ -1,11 +1,9 @@
 import { createReadStream } from 'node:fs';
-import { unlink } from 'node:fs/promises';
 import { nanoid } from 'nanoid';
 import { db, files as fileSchema } from '../db';
 import type { NewFile } from '../db/schema';
 import { config } from '../env';
-import { getErrorMessage } from './file';
-import logger from './logger';
+import { cleanupTempFile } from './file';
 import { forwardToStorage } from './telegram';
 import { createZip, type ZipEntry } from './zip';
 
@@ -37,14 +35,6 @@ const BATCH_WINDOW_MS = 2000;
 
 let pendingUploads: PendingUpload[] = [];
 let flushTimer: ReturnType<typeof setTimeout> | null = null;
-
-const cleanupTempFile = async (tempPath: string): Promise<void> => {
-  try {
-    await unlink(tempPath);
-  } catch (error) {
-    logger.warn('Failed to cleanup temp file', { tempPath, error: getErrorMessage(error) });
-  }
-};
 
 const buildUploadedFile = (
   item: BatchUploadItem,
@@ -124,6 +114,12 @@ const flushUploads = async (): Promise<void> => {
   } finally {
     await Promise.all(batch.map((item) => cleanupTempFile(item.prepared.tempPath)));
     if (zipTempPath) await cleanupTempFile(zipTempPath);
+    // Reschedule timer if new items arrived during async processing
+    if (pendingUploads.length > 0 && !flushTimer) {
+      flushTimer = setTimeout(() => {
+        void flushUploads();
+      }, BATCH_WINDOW_MS);
+    }
   }
 };
 

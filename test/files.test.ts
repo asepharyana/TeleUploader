@@ -60,25 +60,16 @@ mock.module('../src/db/files', () => ({
 }));
 
 // Mock telegram utils
-const mockGetFile = mock(() => Promise.resolve({ file_path: 'photos/file_0.jpg' }));
-mock.module('../src/utils/telegram', () => ({
-  getBot: () => ({
-    telegram: {
-      getFile: mockGetFile,
-    },
-  }),
+const mockGetFileInfo = mock(async (_telegramFileId: string) => ({
+  file_size: 98765,
+  mime_type: 'image/jpeg',
+  file_path: 'photos/file_0.jpg',
+  bot_token: '123456:ABC-DEF',
 }));
 
-// Mock global fetch for proxy path
-const originalFetch = globalThis.fetch;
-const mockGlobalFetch = mock(async (_url: string) =>
-  Promise.resolve(
-    new Response('fake-file-content', {
-      status: 200,
-      headers: { 'Content-Type': 'application/octet-stream' },
-    }),
-  ),
-);
+mock.module('../src/utils/telegram', () => ({
+  getFileInfo: mockGetFileInfo,
+}));
 
 describe('File Route Handlers', () => {
   let handleFileRedirect: typeof import('../src/routes/files').handleFileRedirect;
@@ -86,12 +77,10 @@ describe('File Route Handlers', () => {
 
   beforeEach(async () => {
     mockSelect.mockClear();
-    mockGetFile.mockClear();
-    mockGlobalFetch.mockClear();
+    mockGetFileInfo.mockClear();
 
     // Set up mock token
     process.env.BOT_TOKEN = '123456:ABC-DEF';
-    globalThis.fetch = mockGlobalFetch as any;
 
     const filesRoute = await import('../src/routes/files');
     handleFileRedirect = filesRoute.handleFileRedirect;
@@ -100,7 +89,6 @@ describe('File Route Handlers', () => {
 
   afterAll(() => {
     mock.restore();
-    globalThis.fetch = originalFetch;
   });
 
   describe('handleFileRedirect', () => {

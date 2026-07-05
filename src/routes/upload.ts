@@ -1,11 +1,11 @@
 import { createWriteStream } from 'node:fs';
-import { unlink } from 'node:fs/promises';
 import { nanoid } from 'nanoid';
 import { findFileByHash } from '../db/files';
 import { config } from '../env';
 import {
   buildUploadResponse,
   checkFileSize,
+  cleanupTempFile,
   computeHash,
   ensureExtension,
   extractMimeType,
@@ -13,6 +13,7 @@ import {
   getFileType,
 } from '../utils/file';
 import logger from '../utils/logger';
+import { metricsCollector } from '../utils/metrics';
 import { enqueuePreparedUpload, type PreparedUpload } from '../utils/uploadBatcher';
 
 interface JsonUploadPayload {
@@ -54,14 +55,6 @@ const rejectOversizedRequest = (req: Request): Response | null => {
   }
 
   return null;
-};
-
-const cleanupTempFile = async (tempPath: string): Promise<void> => {
-  try {
-    await unlink(tempPath);
-  } catch (err) {
-    logger.warn('Failed to cleanup temp file', { tempPath, error: getErrorMessage(err) });
-  }
 };
 
 const streamFileToTemp = async (file: File, maxSizeBytes: number): Promise<PreparedUpload> => {
@@ -145,6 +138,7 @@ const writeBufferToTemp = async (fileBuffer: Buffer, fileHash: string): Promise<
 };
 
 export const handleUpload = async (req: Request): Promise<Response> => {
+  const startTime = performance.now();
   try {
     const contentType = req.headers.get('content-type') || '';
     const oversizedResponse = rejectOversizedRequest(req);
@@ -161,9 +155,12 @@ export const handleUpload = async (req: Request): Promise<Response> => {
       { status: 400 },
     );
   } catch (error: unknown) {
+    metricsCollector.recordError();
     const message = getErrorMessage(error);
     logger.error('Upload error', { error: message });
     return Response.json({ error: message }, { status: 500 });
+  } finally {
+    metricsCollector.recordUploadTime(performance.now() - startTime);
   }
 };
 

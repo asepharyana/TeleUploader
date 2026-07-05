@@ -28,6 +28,7 @@ mock.module('telegraf', () => {
       constructor(token) {
         this.token = token;
         this.telegram = {
+          token: token,
           sendPhoto: mock(() =>
             Promise.resolve({
               message_id: 12345,

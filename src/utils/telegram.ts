@@ -129,27 +129,6 @@ const buildSendPayload = (fileType: string, fileName: string): SendPayload => {
   return basePayload;
 };
 
-const getMediaGroupType = (fileType: string): string => {
-  if (fileType === 'photo') return 'photo';
-  if (fileType === 'video') return 'video';
-  if (fileType === 'audio') return 'audio';
-  return 'document';
-};
-
-interface MediaGroupPayloadItem {
-  type: string;
-  media: string;
-  caption: string;
-}
-
-const buildMediaGroup = (items: MediaGroupItem[]): MediaGroupPayloadItem[] => {
-  return items.map((item) => ({
-    type: getMediaGroupType(item.fileType),
-    media: item.fileId,
-    caption: item.fileName,
-  }));
-};
-
 export const forwardToStorage = async (
   fileChunk: unknown,
   fileName: string,
@@ -178,57 +157,6 @@ export const forwardToStorage = async (
   } catch (error: unknown) {
     logger.error('Failed to forward file to storage', {
       fileName,
-      error: error instanceof Error ? error.message : String(error),
-    });
-    throw error;
-  }
-};
-
-export interface MediaGroupItem {
-  fileId: string;
-  fileName: string;
-  fileType: string;
-}
-
-export const forwardMediaGroupToStorage = async (
-  items: MediaGroupItem[],
-): Promise<{
-  storageMessageId: number;
-  telegramFileIds: string[];
-  telegramFileUniqueIds: string[];
-}> => {
-  try {
-    const result = await enqueueUpload(async (): Promise<TelegramMessageResult[]> => {
-      const mediaGroup = buildMediaGroup(items);
-
-      return executeWithBotRetry((activeBot) => {
-        const sendMediaGroup = activeBot.telegram.sendMediaGroup as unknown as (
-          chatId: number,
-          media: MediaGroupPayloadItem[],
-        ) => Promise<TelegramMessageResult[]>;
-        return sendMediaGroup(config.storageChatId, mediaGroup);
-      });
-    });
-
-    const messages = Array.isArray(result) ? result : [result];
-    const storageMessageId = messages[0]?.message_id || 0;
-
-    const telegramFileIds: string[] = [];
-    const telegramFileUniqueIds: string[] = [];
-
-    for (let i = 0; i < messages.length; i++) {
-      const uploadedFile = extractUploadedFile(messages[i], items[i]?.fileType || 'document');
-      telegramFileIds.push(uploadedFile?.file_id || '');
-      telegramFileUniqueIds.push(uploadedFile?.file_unique_id || '');
-    }
-
-    return {
-      storageMessageId,
-      telegramFileIds,
-      telegramFileUniqueIds,
-    };
-  } catch (error: unknown) {
-    logger.error('Failed to forward media group to storage', {
       error: error instanceof Error ? error.message : String(error),
     });
     throw error;

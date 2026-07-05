@@ -39,7 +39,7 @@ describe('Environment Variables Validation', () => {
     expect(config.rateLimitWindowMs).toBe(60000);
   });
 
-  it('rateLimitMaxRequests should default to 30 when not specified', () => {
-    expect(config.rateLimitMaxRequests).toBe(30);
+  it('rateLimitMaxRequests should default to 150 when not specified', () => {
+    expect(config.rateLimitMaxRequests).toBe(150);
   });
 });

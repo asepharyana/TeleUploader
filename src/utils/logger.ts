@@ -12,16 +12,14 @@ const logger = winston.createLogger({
     // Write all logs including error logs to file
     new winston.transports.File({ filename: 'logs/error.log', level: 'error' }),
     new winston.transports.File({ filename: 'logs/combined.log' }),
+    // Console transport for docker logs / CLI visibility
+    new winston.transports.Console({
+      format:
+        process.env.NODE_ENV !== 'production'
+          ? winston.format.combine(winston.format.colorize(), winston.format.simple())
+          : winston.format.json(),
+    }),
   ],
 });
-
-// If not production, also log to console
-if (process.env.NODE_ENV !== 'production') {
-  logger.add(
-    new winston.transports.Console({
-      format: winston.format.combine(winston.format.colorize(), winston.format.simple()),
-    }),
-  );
-}
 
 export default logger;
