@@ -90,7 +90,8 @@ export const handleSwaggerJson = async (): Promise<Response> => {
       '/api/upload': {
         post: {
           summary: 'Upload File',
-          description: 'Uploads a file to Telegram storage via multipart/form-data or JSON base64. Rate-limited by IP.',
+          description:
+            'Uploads a file to Telegram storage via multipart/form-data or JSON base64. Rate-limited by IP.',
           requestBody: {
             required: true,
             content: {

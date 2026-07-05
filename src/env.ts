@@ -52,11 +52,13 @@ const maskSecret = (value: string): string => {
   return `${value.slice(0, 6)}...${value.slice(-4)}`;
 };
 
-const maskDatabaseUrl = (value: string): string => value.replace(/:\/\/([^:]+):([^@]+)@/, '://$1:***@');
+const maskDatabaseUrl = (value: string): string =>
+  value.replace(/:\/\/([^:]+):([^@]+)@/, '://$1:***@');
 
 export const config: AppConfig = {
   botToken: process.env.BOT_TOKEN!,
-  additionalBotTokens: process.env.NODE_ENV === 'test' ? [] : parseTokens(process.env.ADDITIONAL_BOT_TOKENS),
+  additionalBotTokens:
+    process.env.NODE_ENV === 'test' ? [] : parseTokens(process.env.ADDITIONAL_BOT_TOKENS),
   storageChatId: parseInt(process.env.STORAGE_CHANNEL_ID!, 10),
   baseUrl: process.env.BASE_URL!,
   databaseUrl: process.env.DATABASE_URL!,

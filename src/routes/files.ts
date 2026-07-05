@@ -43,8 +43,7 @@ const cleanupTempFile = async (tempPath: string): Promise<void> => {
 const sanitizeFilenameHeader = (fileName: string): string =>
   fileName.replace(/[\\"]/g, '').replace(/[\n\r]/g, '');
 
-const fail = (status: number, error: string): Response =>
-  Response.json({ error }, { status });
+const fail = (status: number, error: string): Response => Response.json({ error }, { status });
 
 export const handleFileRedirect = async (req: RequestWithParams): Promise<Response> => {
   const public_id = req.params?.public_id;

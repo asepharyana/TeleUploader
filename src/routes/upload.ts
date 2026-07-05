@@ -231,7 +231,10 @@ const handleJSONUpload = async (req: Request): Promise<Response> => {
 
     const { base64Data, mimeType: rawMimeType } = parseBase64File(file);
     const estimatedSizeBytes = Math.floor((base64Data.length * 3) / 4);
-    if (estimatedSizeBytes > JSON_UPLOAD_LIMIT_BYTES || estimatedSizeBytes > config.maxRequestBodyBytes) {
+    if (
+      estimatedSizeBytes > JSON_UPLOAD_LIMIT_BYTES ||
+      estimatedSizeBytes > config.maxRequestBodyBytes
+    ) {
       return Response.json(
         {
           error:

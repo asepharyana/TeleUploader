@@ -140,7 +140,10 @@ export const enqueuePreparedUpload = (item: BatchUploadItem): Promise<UploadedFi
       }, BATCH_WINDOW_MS);
     }
 
-    if (pendingUploads.length >= config.batchMaxItems || getPendingSize() >= config.batchMaxSizeBytes) {
+    if (
+      pendingUploads.length >= config.batchMaxItems ||
+      getPendingSize() >= config.batchMaxSizeBytes
+    ) {
       void flushUploads();
     }
   });

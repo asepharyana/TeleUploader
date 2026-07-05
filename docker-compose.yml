@@ -1,8 +1,6 @@
-version: '3.8'
-
 services:
   app:
-    image: ghcr.io/mytheclipse/teleuploader:latest
+    build: .
     container_name: teleuploader-app
     restart: always
     environment:
@@ -26,6 +24,7 @@ services:
     read_only: true
     tmpfs:
       - /tmp:size=4g,mode=1777
+      - /usr/src/app/logs:size=64m,mode=1777
     deploy:
       resources:
         limits:
@@ -37,7 +36,7 @@ services:
     healthcheck:
       test:
         - CMD-SHELL
-        - curl -sf http://localhost:3000/health || exit 1
+        - "bun -e \"fetch('http://localhost:3000/health').then(r => r.status === 200 ? process.exit(0) : process.exit(1))\""
       interval: 30s
       timeout: 10s
       retries: 3

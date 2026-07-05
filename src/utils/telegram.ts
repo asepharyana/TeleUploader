@@ -5,11 +5,6 @@ import { enqueueUpload } from './telegramQueue';
 
 const botTokens = Array.from(new Set([config.botToken, ...config.additionalBotTokens]));
 
-type FileInfoResult = {
-  result: unknown;
-  botToken: string;
-};
-
 const bots = botTokens.map((token) => new Telegraf(token));
 
 let nextBotIndex = 0;

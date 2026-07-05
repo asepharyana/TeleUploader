@@ -3,16 +3,14 @@ FROM oven/bun:alpine AS builder
 
 WORKDIR /usr/src/app
 
-# Install dependencies (including devDependencies for build and lint)
-COPY package.json tsconfig.json biome.json ./
+# Install dependencies (devDependencies included for build)
+COPY package.json tsconfig.json ./
 RUN bun install
 
-# Copy src and test directories
+# Copy source
 COPY src ./src
-COPY test ./test
 
-# Run lint and build
-RUN bun run lint
+# Build (lint is run locally before deploy)
 RUN bun run build
 
 # Stage 2: Runner
