@@ -393,11 +393,53 @@ describe('S3 API (production, SigV4)', () => {
     expect(xml).toContain('InvalidRange');
   });
 
+  it('Multipart GetObject — returns complete concatenated body', async () => {
+    const create = await s3Request('POST', `/${bucketName}/multipart-full.txt`, {
+      query: { uploads: '' },
+    });
+    expect(create.status).toBe(200);
+    const createXml = await create.text();
+    const uploadId = createXml.match(/<UploadId>([^<]+)<\/UploadId>/)?.[1];
+    expect(uploadId).toBeTruthy();
+
+    const part1 = new TextEncoder().encode('hello ');
+    const part2 = new TextEncoder().encode('multipart');
+    const p1 = await s3Request('PUT', `/${bucketName}/multipart-full.txt`, {
+      query: { partNumber: '1', uploadId: uploadId! },
+      body: part1,
+    });
+    const p2 = await s3Request('PUT', `/${bucketName}/multipart-full.txt`, {
+      query: { partNumber: '2', uploadId: uploadId! },
+      body: part2,
+    });
+    expect(p1.status).toBe(200);
+    expect(p2.status).toBe(200);
+
+    const completeBody = `<CompleteMultipartUpload><Part><PartNumber>1</PartNumber><ETag>${p1.headers.get('etag')}</ETag></Part><Part><PartNumber>2</PartNumber><ETag>${p2.headers.get('etag')}</ETag></Part></CompleteMultipartUpload>`;
+    const complete = await s3Request('POST', `/${bucketName}/multipart-full.txt`, {
+      query: { uploadId: uploadId! },
+      body: new TextEncoder().encode(completeBody),
+    });
+    expect(complete.status).toBe(200);
+
+    const full = await s3Request('GET', `/${bucketName}/multipart-full.txt`);
+    expect(full.status).toBe(200);
+    expect(await full.text()).toBe('hello multipart');
+
+    const partial = await s3Request('GET', `/${bucketName}/multipart-full.txt`, {
+      headers: { range: 'bytes=3-9' },
+    });
+    expect(partial.status).toBe(206);
+    expect(partial.headers.get('content-range')).toBe('bytes 3-9/15');
+    expect(await partial.text()).toBe('lo mult');
+  });
+
   it('Delete bucket — must be empty first', async () => {
     // Clean up remaining objects
     await s3Request('DELETE', `/${bucketName}/test-file.txt`);
     await s3Request('DELETE', `/${bucketName}/copy-dest.txt`);
     await s3Request('DELETE', `/${bucketName}/presigned-test.txt`);
+    await s3Request('DELETE', `/${bucketName}/multipart-full.txt`);
 
     const r = await s3Request('DELETE', `/${bucketName}`);
     expect(r.status).toBe(204);

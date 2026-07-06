@@ -312,7 +312,7 @@ const handleGetObject = async (
     );
 
   if (file.multipartUploadId) {
-    return handleGetMultipartObject(file, bucket, key, reqId);
+    return handleGetMultipartObject(file, bucket, key, headers, reqId);
   }
 
   const fileInfo = await getFileInfo(file.telegramFileId);
@@ -377,6 +377,7 @@ const handleGetMultipartObject = async (
   file: File,
   bucket: string,
   key: string,
+  headers: Record<string, string>,
   reqId: string,
 ): Promise<Response> => {
   const uploadId = file.multipartUploadId!;
@@ -392,21 +393,53 @@ const handleGetMultipartObject = async (
     );
   }
 
-  const fileInfo = await getFileInfo(parts[0].telegramFileId);
-  const redirectUrl = `https://api.telegram.org/file/bot${fileInfo.bot_token}/${fileInfo.file_path}`;
+  const totalSize = parts.reduce((sum, p) => sum + p.sizeBytes, 0);
+  const range = parseRangeHeader(headers.range || null, totalSize);
+  if (range.type === 'invalid') {
+    return s3ErrorResponse(
+      'InvalidRange',
+      'The requested range is not satisfiable.',
+      `/${bucket}/${key}`,
+      416,
+      reqId,
+      {
+        'content-range': unsatisfiedContentRange(totalSize),
+      },
+    );
+  }
+
+  const sources: ObjectPartSource[] = [];
+  for (const part of parts) {
+    const fileInfo = await getFileInfo(part.telegramFileId);
+    sources.push({
+      telegramFileId: part.telegramFileId,
+      telegramUrl: `https://api.telegram.org/file/bot${fileInfo.bot_token}/${fileInfo.file_path}`,
+      sizeBytes: part.sizeBytes,
+      partNumber: part.partNumber,
+    });
+  }
 
   if (!config.proxyS3Get) {
     return new Response(null, {
       status: 302,
-      headers: { Location: redirectUrl, 'x-amz-request-id': reqId },
+      headers: { Location: sources[0].telegramUrl, 'x-amz-request-id': reqId },
     });
   }
 
-  const tgResponse = await fetch(redirectUrl);
-  if (!tgResponse.ok) {
+  try {
+    return await createGetObjectResponse({
+      reqId,
+      contentType: file.mimeType,
+      etag: file.fileHash || parts.map((p) => p.etag).join('-'),
+      lastModified: file.createdAt instanceof Date ? file.createdAt : new Date(file.createdAt),
+      totalSize,
+      parts: sources,
+      range,
+    });
+  } catch (error) {
     logger.warn('Telegram multipart content fetch failed', {
-      status: tgResponse.status,
       uploadId: file.multipartUploadId,
+      error: getErrorMessage(error),
     });
     return s3ErrorResponse(
       'InternalError',
@@ -416,23 +449,6 @@ const handleGetMultipartObject = async (
       reqId,
     );
   }
-
-  const totalSize = parts.reduce((sum, p) => sum + p.sizeBytes, 0);
-  return new Response(tgResponse.body, {
-    status: 200,
-    headers: {
-      'content-type': file.mimeType,
-      'content-length': String(totalSize || file.sizeBytes),
-      etag: `"${file.fileHash || ''}"`,
-      'last-modified':
-        file.createdAt instanceof Date
-          ? file.createdAt.toUTCString()
-          : new Date(file.createdAt).toUTCString(),
-      'x-amz-request-id': reqId,
-      'accept-ranges': 'bytes',
-      'cache-control': 'public, max-age=31536000',
-    },
-  });
 };
 
 const handleHeadObject = async (bucket: string, key: string, reqId: string): Promise<Response> => {
