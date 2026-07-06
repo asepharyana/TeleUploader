@@ -62,7 +62,9 @@ export const listObjectsByPrefix = async (
   maxKeys: number,
   startAfter: string | null,
 ): Promise<{ objects: S3FileRecord[]; prefixes: string[] }> => {
-  let query = sql`SELECT * FROM files WHERE bucket_id = ${bucketId}::uuid AND is_deleted = false AND s3_key LIKE ${`${prefix}%`}`;
+  let query = prefix
+    ? sql`SELECT * FROM files WHERE bucket_id = ${bucketId}::uuid AND is_deleted = false AND s3_key >= ${prefix} AND s3_key < ${`${prefix}￿`}`
+    : sql`SELECT * FROM files WHERE bucket_id = ${bucketId}::uuid AND is_deleted = false`;
 
   if (startAfter) {
     query = sql`${query} AND s3_key > ${startAfter}`;

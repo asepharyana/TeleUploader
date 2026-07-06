@@ -48,7 +48,7 @@ services:
       - app-shared-net
     labels:
       - "traefik.enable=true"
-      - "traefik.http.routers.teleuploader.rule=Host(`upload.asepharyana.my.id`) || Host(`upload.asepharyana.web.id`)"
+      - "traefik.http.routers.teleuploader.rule=Host(`upload.asepharyana.my.id`) || Host(`upload.asepharyana.web.id`) || HostRegexp(`{subhost:[a-z0-9][a-z0-9.-]+}.upload.asepharyana.my.id`) || HostRegexp(`{subhost:[a-z0-9][a-z0-9.-]+}.upload.asepharyana.web.id`)"
       - "traefik.http.routers.teleuploader.entrypoints=websecure"
       - "traefik.http.routers.teleuploader.tls=true"
       - "traefik.http.routers.teleuploader.tls.certresolver=cloudflare"

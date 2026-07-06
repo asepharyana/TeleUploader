@@ -174,6 +174,9 @@ export const verifySignature = async (
   const canonicalQueryString = buildCanonicalQueryString(parsedUrl.searchParams);
 
   const contentSha256 = headers['x-amz-content-sha256'] || null;
+  if (contentSha256?.startsWith('STREAMING-')) {
+    return { isValid: false, credential: null, errorCode: 'NotImplemented' };
+  }
   const hashedPayload = await getHashedPayload(body, contentSha256);
 
   const canonicalRequest = buildCanonicalRequest(

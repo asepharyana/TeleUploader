@@ -1,3 +1,5 @@
+import { s3Headers } from './headers';
+
 const escapeXml = (str: string): string =>
   str
     .replace(/&/g, '&amp;')
@@ -7,6 +9,9 @@ const escapeXml = (str: string): string =>
     .replace(/'/g, '&apos;');
 
 const isoDate = (d: Date): string => d.toISOString().replace(/\.\d{3}Z$/, 'Z');
+
+const encodeKey = (value: string, encodingType: string | null = null): string =>
+  encodingType === 'url' ? encodeURIComponent(value) : escapeXml(value);
 
 // ─────── Bucket operations ───────
 
@@ -40,18 +45,20 @@ export const listBucketResultXml = (
   delimiter: string | null,
   nextMarker: string | null,
   _requestId: string,
+  encodingType: string | null = null,
 ): string => `<?xml version="1.0" encoding="UTF-8"?>
 <ListBucketResult xmlns="http://s3.amazonaws.com/doc/2006-03-01/">
   <Name>${escapeXml(bucketName)}</Name>
-  <Prefix>${escapeXml(prefix)}</Prefix>
-  <Marker>${escapeXml(marker || '')}</Marker>
+  <Prefix>${encodeKey(prefix, encodingType)}</Prefix>
+  <Marker>${encodeKey(marker || '', encodingType)}</Marker>
   <MaxKeys>${maxKeys}</MaxKeys>
-  <Delimiter>${escapeXml(delimiter || '')}</Delimiter>
+  <Delimiter>${encodeKey(delimiter || '', encodingType)}</Delimiter>
+  ${encodingType ? `<EncodingType>${escapeXml(encodingType)}</EncodingType>` : ''}
   <IsTruncated>${isTruncated}</IsTruncated>
   ${objects
     .map(
       (o) => `<Contents>
-    <Key>${escapeXml(o.key)}</Key>
+    <Key>${encodeKey(o.key, encodingType)}</Key>
     <LastModified>${isoDate(o.lastModified)}</LastModified>
     <ETag>"${o.etag}"</ETag>
     <Size>${o.sizeBytes}</Size>
@@ -62,11 +69,11 @@ export const listBucketResultXml = (
   ${prefixes
     .map(
       (p) => `<CommonPrefixes>
-    <Prefix>${escapeXml(p)}</Prefix>
+    <Prefix>${encodeKey(p, encodingType)}</Prefix>
   </CommonPrefixes>`,
     )
     .join('')}
-  ${nextMarker ? `<NextMarker>${escapeXml(nextMarker)}</NextMarker>` : ''}
+  ${nextMarker ? `<NextMarker>${encodeKey(nextMarker, encodingType)}</NextMarker>` : ''}
 </ListBucketResult>`;
 
 export const listBucketV2ResultXml = (
@@ -81,19 +88,21 @@ export const listBucketV2ResultXml = (
   nextContinuationToken: string | null,
   keyCount: number,
   _requestId: string,
+  encodingType: string | null = null,
 ): string => `<?xml version="1.0" encoding="UTF-8"?>
 <ListBucketResultV2 xmlns="http://s3.amazonaws.com/doc/2006-03-01/">
   <Name>${escapeXml(bucketName)}</Name>
-  <Prefix>${escapeXml(prefix)}</Prefix>
+  <Prefix>${encodeKey(prefix, encodingType)}</Prefix>
   <MaxKeys>${maxKeys}</MaxKeys>
   <KeyCount>${keyCount}</KeyCount>
-  ${delimiter ? `<Delimiter>${escapeXml(delimiter)}</Delimiter>` : ''}
-  ${continuationToken ? `<ContinuationToken>${escapeXml(continuationToken)}</ContinuationToken>` : ''}
+  ${delimiter ? `<Delimiter>${encodeKey(delimiter, encodingType)}</Delimiter>` : ''}
+  ${encodingType ? `<EncodingType>${escapeXml(encodingType)}</EncodingType>` : ''}
+  ${continuationToken ? `<ContinuationToken>${encodeKey(continuationToken, encodingType)}</ContinuationToken>` : ''}
   <IsTruncated>${isTruncated}</IsTruncated>
   ${objects
     .map(
       (o) => `<Contents>
-    <Key>${escapeXml(o.key)}</Key>
+    <Key>${encodeKey(o.key, encodingType)}</Key>
     <LastModified>${isoDate(o.lastModified)}</LastModified>
     <ETag>"${o.etag}"</ETag>
     <Size>${o.sizeBytes}</Size>
@@ -104,11 +113,11 @@ export const listBucketV2ResultXml = (
   ${prefixes
     .map(
       (p) => `<CommonPrefixes>
-    <Prefix>${escapeXml(p)}</Prefix>
+    <Prefix>${encodeKey(p, encodingType)}</Prefix>
   </CommonPrefixes>`,
     )
     .join('')}
-  ${nextContinuationToken ? `<NextContinuationToken>${escapeXml(nextContinuationToken)}</NextContinuationToken>` : ''}
+  ${nextContinuationToken ? `<NextContinuationToken>${encodeKey(nextContinuationToken, encodingType)}</NextContinuationToken>` : ''}
 </ListBucketResultV2>`;
 
 // ─────── Multipart ───────
@@ -150,6 +159,35 @@ export const listPartsXml = (
     )
     .join('')}
 </ListPartsResult>`;
+
+export const listMultipartUploadsXml = (
+  bucketName: string,
+  uploads: { key: string; uploadId: string; initiatedAt: Date; initiatedBy: string }[],
+  maxUploads: number,
+  isTruncated: boolean,
+  nextKeyMarker: string | null,
+  _requestId: string,
+): string => `<?xml version="1.0" encoding="UTF-8"?>
+<ListMultipartUploadsResult xmlns="http://s3.amazonaws.com/doc/2006-03-01/">
+  <Bucket>${escapeXml(bucketName)}</Bucket>
+  <KeyMarker></KeyMarker>
+  <UploadIdMarker></UploadIdMarker>
+  ${nextKeyMarker ? `<NextKeyMarker>${escapeXml(nextKeyMarker)}</NextKeyMarker>` : ''}
+  <MaxUploads>${maxUploads}</MaxUploads>
+  <IsTruncated>${isTruncated}</IsTruncated>
+  ${uploads
+    .map(
+      (u) => `<Upload>
+    <Key>${escapeXml(u.key)}</Key>
+    <UploadId>${u.uploadId}</UploadId>
+    <Initiator><ID>${escapeXml(u.initiatedBy || 's3')}</ID><DisplayName>${escapeXml(u.initiatedBy || 's3')}</DisplayName></Initiator>
+    <Owner><ID>${escapeXml(u.initiatedBy || 's3')}</ID><DisplayName>${escapeXml(u.initiatedBy || 's3')}</DisplayName></Owner>
+    <StorageClass>STANDARD</StorageClass>
+    <Initiated>${isoDate(u.initiatedAt)}</Initiated>
+  </Upload>`,
+    )
+    .join('')}
+</ListMultipartUploadsResult>`;
 
 export const completeMultipartUploadXml = (
   bucketName: string,
@@ -213,6 +251,7 @@ export const s3ErrorXml = (
   <Message>${escapeXml(message)}</Message>
   <Resource>${escapeXml(resource)}</Resource>
   <RequestId>${requestId}</RequestId>
+  <HostId>${requestId}</HostId>
 </Error>`;
 
 export const s3ErrorResponse = (
@@ -225,11 +264,10 @@ export const s3ErrorResponse = (
 ): Response =>
   new Response(s3ErrorXml(code, message, resource, requestId), {
     status,
-    headers: {
+    headers: s3Headers(requestId, {
       'content-type': 'application/xml',
-      ...(requestId ? { 'x-amz-request-id': requestId } : {}),
       ...extraHeaders,
-    },
+    }),
   });
 
 // ─────── DeleteObjects XML parser ───────

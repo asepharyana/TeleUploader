@@ -20,6 +20,7 @@ interface AppConfig {
   s3SecretKey: string;
   s3DefaultRegion: string;
   proxyS3Get: boolean;
+  s3VhostDomains: string[];
 }
 
 const requiredEnv = {
@@ -49,6 +50,14 @@ const parseTokens = (value: string | undefined): string[] =>
     .split(',')
     .map((t) => t.trim())
     .filter((t) => t !== '');
+
+const parseDomains = (value: string | undefined): string[] =>
+  parseTokens(value).map((domain) =>
+    domain
+      .replace(/^https?:\/\//, '')
+      .split('/')[0]
+      .toLowerCase(),
+  );
 
 const maskSecret = (value: string): string => {
   if (!value) return '';
@@ -80,6 +89,9 @@ export const config: AppConfig = {
   s3SecretKey: process.env.S3_SECRET_KEY || '',
   s3DefaultRegion: process.env.S3_DEFAULT_REGION || 'us-east-1',
   proxyS3Get: process.env.PROXY_S3_GET !== 'false',
+  s3VhostDomains: parseDomains(
+    process.env.S3_VHOST_DOMAINS || 'upload.asepharyana.my.id,upload.asepharyana.web.id',
+  ),
 };
 
 logger.info('Environment variables loaded', {

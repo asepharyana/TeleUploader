@@ -90,3 +90,40 @@ export const listMultipartParts = async (uploadId: string): Promise<MultipartPar
     createdAt: new Date(r.created_at as string),
   }));
 };
+
+const mapRowToMultipartUpload = (r: Record<string, unknown>): MultipartUpload => ({
+  uploadId: r.upload_id as string,
+  bucketId: r.bucket_id as string,
+  s3Key: r.s3_key as string,
+  initiatedAt: new Date(r.initiated_at as string),
+  status: r.status as string,
+  initiatedBy: (r.initiated_by as string | null) || '',
+});
+
+export const listMultipartUploadsByBucket = async (
+  bucketId: string,
+  maxUploads: number,
+  keyMarker: string | null,
+): Promise<{ uploads: MultipartUpload[]; isTruncated: boolean; nextKeyMarker: string | null }> => {
+  const limit = Math.min(Math.max(maxUploads || 1000, 1), 1000);
+  const result = (await db.execute(
+    keyMarker
+      ? sql`SELECT upload_id, bucket_id, s3_key, initiated_at, status, initiated_by
+          FROM multipart_uploads
+          WHERE bucket_id = ${bucketId}::uuid AND status = 'in_progress' AND s3_key > ${keyMarker}
+          ORDER BY s3_key, initiated_at
+          LIMIT ${limit + 1}`
+      : sql`SELECT upload_id, bucket_id, s3_key, initiated_at, status, initiated_by
+          FROM multipart_uploads
+          WHERE bucket_id = ${bucketId}::uuid AND status = 'in_progress'
+          ORDER BY s3_key, initiated_at
+          LIMIT ${limit + 1}`,
+  )) as unknown as Record<string, unknown>[];
+
+  const uploads = result.slice(0, limit).map(mapRowToMultipartUpload);
+  return {
+    uploads,
+    isTruncated: result.length > limit,
+    nextKeyMarker: result.length > limit ? uploads.at(-1)?.s3Key || null : null,
+  };
+};

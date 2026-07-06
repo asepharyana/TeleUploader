@@ -14,12 +14,14 @@ import {
   findMultipartUpload,
   insertMultipartPart,
   listMultipartParts,
+  listMultipartUploadsByBucket,
 } from '../db/multipart';
 import type { File } from '../db/schema';
 import { config } from '../env';
 import { cleanupTempFile, computeHash, ensureExtension, getErrorMessage } from '../utils/file';
 import logger from '../utils/logger';
 import { verifyPresignedUrl, verifySignature } from '../utils/s3/auth';
+import { S3_CORS_HEADERS, s3Headers } from '../utils/s3/headers';
 import { createGetObjectResponse, type ObjectPartSource } from '../utils/s3/object-stream';
 import { parseRangeHeader, unsatisfiedContentRange } from '../utils/s3/range';
 import {
@@ -30,6 +32,7 @@ import {
   listBucketResultXml,
   listBucketsXml,
   listBucketV2ResultXml,
+  listMultipartUploadsXml,
   listPartsXml,
   parseCompleteMultipartBody,
   parseDeleteObjectsBody,
@@ -39,6 +42,16 @@ import { forwardToStorage, getFileInfo } from '../utils/telegram';
 
 const REGION = config.s3DefaultRegion || 'us-east-1';
 const REQUEST_ID = () => nanoid(16);
+
+const s3Response = (
+  body: string | null,
+  status: number,
+  reqId: string,
+  extraHeaders: Record<string, string> = {},
+): Response => new Response(body, { status, headers: s3Headers(reqId, extraHeaders) });
+
+const s3OptionsResponse = (): Response =>
+  new Response(null, { status: 204, headers: S3_CORS_HEADERS });
 
 const parseS3Path = (pathname: string): { bucket: string | null; key: string | null } => {
   const parts = pathname.split('/').filter(Boolean);
@@ -57,45 +70,62 @@ const headersToRecord = (req: Request): Record<string, string> => {
 
 // ─────── Main Dispatcher ───────
 
-export const handleS3Request = async (req: Request): Promise<Response> => {
+export const handleS3Request = async (
+  req: Request,
+  virtualHostBucket: string | null = null,
+): Promise<Response> => {
   const method = req.method;
   const url = new URL(req.url);
   const pathname = url.pathname;
-  const { bucket, key } = parseS3Path(pathname);
+  const { bucket, key } = virtualHostBucket
+    ? {
+        bucket: virtualHostBucket,
+        key: pathname === '/' ? null : decodeURIComponent(pathname.slice(1)),
+      }
+    : parseS3Path(pathname);
   const headers = headersToRecord(req);
   const searchParams = url.searchParams;
   const reqId = REQUEST_ID();
 
-  // Presigned URLs: only supported for GET (verified in handleGetObject)
-  if (searchParams.has('X-Amz-Signature')) {
-    if (method !== 'GET') {
-      return s3ErrorResponse(
-        'AccessDenied',
-        'Presigned URLs only supported for GET',
-        pathname,
-        403,
-        reqId,
+  if (method === 'OPTIONS') {
+    return s3OptionsResponse();
+  }
+
+  const isPresigned = searchParams.has('X-Amz-Signature');
+  const authResult = isPresigned
+    ? await verifyPresignedUrl({
+        url: req.url,
+        method,
+        headers,
+        s3AccessKey: config.s3AccessKey,
+        s3SecretKey: config.s3SecretKey,
+        region: REGION,
+      })
+    : await verifySignature(
+        method,
+        req.url,
+        headers,
+        null,
+        config.s3AccessKey,
+        config.s3SecretKey,
+        REGION,
       );
-    }
-  } else {
-    const authResult = await verifySignature(
-      method,
-      req.url,
-      headers,
-      null,
-      config.s3AccessKey,
-      config.s3SecretKey,
-      REGION,
+
+  if (!authResult.isValid) {
+    const status = authResult.errorCode === 'NotImplemented' ? 501 : 403;
+    const message =
+      authResult.errorCode === 'NotImplemented'
+        ? 'aws-chunked streaming payloads are not supported.'
+        : isPresigned
+          ? 'Presigned URL verification failed'
+          : 'Authentication required';
+    return s3ErrorResponse(
+      authResult.errorCode || 'AccessDenied',
+      message,
+      pathname,
+      status,
+      reqId,
     );
-    if (!authResult.isValid) {
-      return s3ErrorResponse(
-        authResult.errorCode || 'AccessDenied',
-        'Authentication required',
-        pathname,
-        403,
-        reqId,
-      );
-    }
   }
 
   try {
@@ -116,6 +146,9 @@ export const handleS3Request = async (req: Request): Promise<Response> => {
     // Bucket-level operations
     if (!key) {
       if (method === 'GET') {
+        if (searchParams.has('uploads')) {
+          return handleListMultipartUploads(bucket, searchParams, reqId);
+        }
         const listType = searchParams.get('list-type');
         if (listType === '2') {
           return handleListObjectsV2(bucket, searchParams, reqId);
@@ -131,7 +164,7 @@ export const handleS3Request = async (req: Request): Promise<Response> => {
           return handleDeleteObjects(bucket, body, reqId);
         }
         if (searchParams.has('tagging')) {
-          return new Response(null, { status: 204 });
+          return s3Response(null, 204, reqId);
         }
       }
       return s3ErrorResponse(
@@ -162,8 +195,7 @@ export const handleS3Request = async (req: Request): Promise<Response> => {
     }
 
     // Standard object operations
-    if (method === 'GET')
-      return handleGetObject(bucket, key, searchParams, headers, req.url, reqId);
+    if (method === 'GET') return handleGetObject(bucket, key, searchParams, headers, reqId);
     if (method === 'HEAD') return handleHeadObject(bucket, key, reqId);
     if (method === 'PUT') return handlePutObject(bucket, key, searchParams, headers, req, reqId);
     if (method === 'DELETE') return handleDeleteObject(bucket, key, reqId);
@@ -192,10 +224,7 @@ export const handleS3Request = async (req: Request): Promise<Response> => {
 const handleListBuckets = async (reqId: string): Promise<Response> => {
   const buckets = await listBuckets();
   const xml = listBucketsXml(buckets, reqId);
-  return new Response(xml, {
-    status: 200,
-    headers: { 'content-type': 'application/xml', 'x-amz-request-id': reqId },
-  });
+  return s3Response(xml, 200, reqId, { 'content-type': 'application/xml' });
 };
 
 const handleCreateBucket = async (bucketName: string, reqId: string): Promise<Response> => {
@@ -219,7 +248,7 @@ const handleCreateBucket = async (bucketName: string, reqId: string): Promise<Re
     );
   }
   await createBucket(bucketName);
-  return new Response(null, { status: 200, headers: { 'x-amz-request-id': reqId } });
+  return s3Response(null, 200, reqId);
 };
 
 const handleHeadBucket = async (bucketName: string, reqId: string): Promise<Response> => {
@@ -233,7 +262,7 @@ const handleHeadBucket = async (bucketName: string, reqId: string): Promise<Resp
       reqId,
     );
   }
-  return new Response(null, { status: 200, headers: { 'x-amz-request-id': reqId } });
+  return s3Response(null, 200, reqId);
 };
 
 const handleDeleteBucket = async (bucketName: string, reqId: string): Promise<Response> => {
@@ -258,7 +287,7 @@ const handleDeleteBucket = async (bucketName: string, reqId: string): Promise<Re
     );
   }
   await deleteBucket(bucketName);
-  return new Response(null, { status: 204, headers: { 'x-amz-request-id': reqId } });
+  return s3Response(null, 204, reqId);
 };
 
 // ─────── Object Operations ───────
@@ -266,31 +295,10 @@ const handleDeleteBucket = async (bucketName: string, reqId: string): Promise<Re
 const handleGetObject = async (
   bucket: string,
   key: string,
-  searchParams: URLSearchParams,
+  _searchParams: URLSearchParams,
   headers: Record<string, string>,
-  requestUrl: string,
   reqId: string,
 ): Promise<Response> => {
-  if (searchParams.has('X-Amz-Signature')) {
-    const presignedResult = await verifyPresignedUrl({
-      url: requestUrl,
-      method: 'GET',
-      headers,
-      s3AccessKey: config.s3AccessKey,
-      s3SecretKey: config.s3SecretKey,
-      region: REGION,
-    });
-    if (!presignedResult.isValid) {
-      return s3ErrorResponse(
-        presignedResult.errorCode || 'AccessDenied',
-        'Presigned URL verification failed',
-        `/${bucket}/${key}`,
-        403,
-        reqId,
-      );
-    }
-  }
-
   const bucketRecord = await findBucketByName(bucket);
   if (!bucketRecord)
     return s3ErrorResponse(
@@ -335,10 +343,7 @@ const handleGetObject = async (
 
   if (!config.proxyS3Get) {
     // Legacy 302 redirect path (when proxy is disabled)
-    return new Response(null, {
-      status: 302,
-      headers: { Location: redirectUrl, 'x-amz-request-id': reqId },
-    });
+    return s3Response(null, 302, reqId, { location: redirectUrl });
   }
 
   const part: ObjectPartSource = {
@@ -420,10 +425,7 @@ const handleGetMultipartObject = async (
   }
 
   if (!config.proxyS3Get) {
-    return new Response(null, {
-      status: 302,
-      headers: { Location: sources[0].telegramUrl, 'x-amz-request-id': reqId },
-    });
+    return s3Response(null, 302, reqId, { location: sources[0].telegramUrl });
   }
 
   try {
@@ -472,16 +474,14 @@ const handleHeadObject = async (bucket: string, key: string, reqId: string): Pro
       reqId,
     );
 
-  return new Response(null, {
-    status: 200,
-    headers: {
-      'content-type': file.mimeType,
-      'content-length': String(file.sizeBytes),
-      etag: `"${file.fileHash || nanoid(16)}"`,
-      'last-modified':
-        file.createdAt instanceof Date ? file.createdAt.toUTCString() : new Date().toUTCString(),
-      'x-amz-request-id': reqId,
-    },
+  return s3Response(null, 200, reqId, {
+    'content-type': file.mimeType,
+    'content-length': String(file.sizeBytes),
+    etag: `"${file.fileHash || nanoid(16)}"`,
+    'last-modified':
+      file.createdAt instanceof Date ? file.createdAt.toUTCString() : new Date().toUTCString(),
+    'accept-ranges': 'bytes',
+    'cache-control': 'public, max-age=31536000',
   });
 };
 
@@ -504,12 +504,12 @@ const handlePutObject = async (
     );
 
   if (searchParams.has('tagging')) {
-    return new Response(null, { status: 204 });
+    return s3Response(null, 204, reqId);
   }
 
   const copySource = headers['x-amz-copy-source'];
   if (copySource) {
-    return handleCopyObject(bucket, key, copySource, bucketRecord.id, reqId);
+    return handleCopyObject(bucket, key, copySource, headers, bucketRecord.id, reqId);
   }
 
   // Read raw body — S3 clients send raw binary, not multipart/form-data
@@ -520,10 +520,7 @@ const handlePutObject = async (
 
   const existing = await findFileByBucketAndKey(bucketRecord.id, key);
   if (existing) {
-    return new Response(null, {
-      status: 200,
-      headers: { etag: `"${hash}"`, 'x-amz-request-id': reqId },
-    });
+    return s3Response(null, 200, reqId, { etag: `"${hash}"` });
   }
 
   return await storeFileToTelegram(fileBuffer, hash, key, bucketRecord, contentType, reqId);
@@ -579,19 +576,18 @@ const storeFileToTelegram = async (
 
   await cleanupTempFile(tempPath);
 
-  return new Response(null, {
-    status: 200,
-    headers: { etag: `"${hash}"`, 'x-amz-request-id': reqId },
-  });
+  return s3Response(null, 200, reqId, { etag: `"${hash}"` });
 };
 
 const handleCopyObject = async (
   _destBucket: string,
   destKey: string,
-  copySource: string,
+  rawCopySource: string,
+  headers: Record<string, string>,
   destBucketId: string,
   reqId: string,
 ): Promise<Response> => {
+  const copySource = decodeURIComponent(rawCopySource);
   const sourcePath = copySource.startsWith('/') ? copySource.slice(1) : copySource;
   const parts = sourcePath.split('/');
   const sourceBucket = parts[0];
@@ -617,6 +613,28 @@ const handleCopyObject = async (
       reqId,
     );
 
+  // Conditional copy: if-match / if-none-match checks
+  const ifMatch = headers['x-amz-copy-source-if-match'];
+  const ifNoneMatch = headers['x-amz-copy-source-if-none-match'];
+  if (ifMatch && sourceFile.fileHash && ifMatch !== `"${sourceFile.fileHash}"`) {
+    return s3ErrorResponse(
+      'PreconditionFailed',
+      'The preconditions you specified did not hold.',
+      copySource,
+      412,
+      reqId,
+    );
+  }
+  if (ifNoneMatch && sourceFile.fileHash && ifNoneMatch === `"${sourceFile.fileHash}"`) {
+    return s3ErrorResponse(
+      'PreconditionFailed',
+      'The preconditions you specified did not hold.',
+      copySource,
+      412,
+      reqId,
+    );
+  }
+
   const publicId = nanoid();
   const { db, files: fileSchema } = await import('../db/index');
 
@@ -641,10 +659,7 @@ const handleCopyObject = async (
   });
 
   const xml = copyObjectResultXml(sourceFile.fileHash || nanoid(16), new Date());
-  return new Response(xml, {
-    status: 200,
-    headers: { 'content-type': 'application/xml', 'x-amz-request-id': reqId },
-  });
+  return s3Response(xml, 200, reqId, { 'content-type': 'application/xml' });
 };
 
 const handleDeleteObject = async (
@@ -663,7 +678,7 @@ const handleDeleteObject = async (
     );
 
   await softDeleteFile(bucketRecord.id, key);
-  return new Response(null, { status: 204, headers: { 'x-amz-request-id': reqId } });
+  return s3Response(null, 204, reqId);
 };
 
 const handleDeleteObjects = async (
@@ -681,17 +696,14 @@ const handleDeleteObjects = async (
       reqId,
     );
 
-  const { keys } = parseDeleteObjectsBody(body);
+  const { keys, quiet } = parseDeleteObjectsBody(body);
   const deletedKeys: string[] = [];
   for (const key of keys) {
     const ok = await softDeleteFile(bucketRecord.id, key);
     if (ok) deletedKeys.push(key);
   }
-  const xml = deleteResultXml(deletedKeys, []);
-  return new Response(xml, {
-    status: 200,
-    headers: { 'content-type': 'application/xml', 'x-amz-request-id': reqId },
-  });
+  const xml = quiet ? deleteResultXml([], []) : deleteResultXml(deletedKeys, []);
+  return s3Response(xml, 200, reqId, { 'content-type': 'application/xml' });
 };
 
 // ─────── Object Listing ───────
@@ -715,6 +727,7 @@ const handleListObjectsV1 = async (
   const delimiter = searchParams.get('delimiter') || null;
   const maxKeys = Math.min(parseInt(searchParams.get('max-keys') || '1000', 10), 1000);
   const marker = searchParams.get('marker') || null;
+  const encodingType = searchParams.get('encoding-type') || null;
 
   const { objects, prefixes: commonPrefixes } = await listObjectsByPrefix(
     bucketRecord.id,
@@ -747,12 +760,10 @@ const handleListObjectsV1 = async (
     delimiter,
     nextMarker,
     reqId,
+    encodingType,
   );
 
-  return new Response(xml, {
-    status: 200,
-    headers: { 'content-type': 'application/xml', 'x-amz-request-id': reqId },
-  });
+  return s3Response(xml, 200, reqId, { 'content-type': 'application/xml' });
 };
 
 const handleListObjectsV2 = async (
@@ -775,6 +786,7 @@ const handleListObjectsV2 = async (
   const maxKeys = Math.min(parseInt(searchParams.get('max-keys') || '1000', 10), 1000);
   const continuationToken = searchParams.get('continuation-token') || null;
   const startAfter = searchParams.get('start-after') || null;
+  const encodingType = searchParams.get('encoding-type') || null;
 
   const { objects, prefixes: commonPrefixes } = await listObjectsByPrefix(
     bucketRecord.id,
@@ -808,12 +820,10 @@ const handleListObjectsV2 = async (
     nextContinuationToken,
     displayObjects.length,
     reqId,
+    encodingType,
   );
 
-  return new Response(xml, {
-    status: 200,
-    headers: { 'content-type': 'application/xml', 'x-amz-request-id': reqId },
-  });
+  return s3Response(xml, 200, reqId, { 'content-type': 'application/xml' });
 };
 
 // ─────── Multipart Upload ───────
@@ -837,10 +847,7 @@ const handleCreateMultipartUpload = async (
   const uploadId = await createMultipartUpload(bucketRecord.id, key, 's3');
 
   const xml = initiateMultipartUploadXml(bucket, key, uploadId);
-  return new Response(xml, {
-    status: 200,
-    headers: { 'content-type': 'application/xml', 'x-amz-request-id': reqId },
-  });
+  return s3Response(xml, 200, reqId, { 'content-type': 'application/xml' });
 };
 
 const handleUploadPart = async (
@@ -852,6 +859,15 @@ const handleUploadPart = async (
 ): Promise<Response> => {
   const uploadId = searchParams.get('uploadId')!;
   const partNumber = parseInt(searchParams.get('partNumber')!, 10);
+  if (partNumber < 1 || partNumber > 10000) {
+    return s3ErrorResponse(
+      'InvalidArgument',
+      'Part number must be an integer between 1 and 10000',
+      `/${bucket}/${key}`,
+      400,
+      reqId,
+    );
+  }
 
   const multipart = await findMultipartUpload(uploadId);
   if (!multipart || multipart.s3Key !== key) {
@@ -889,10 +905,7 @@ const handleUploadPart = async (
     etag,
   });
 
-  return new Response(null, {
-    status: 200,
-    headers: { etag: `"${etag}"`, 'x-amz-request-id': reqId },
-  });
+  return s3Response(null, 200, reqId, { etag: `"${etag}"` });
 };
 
 const handleCompleteMultipartUpload = async (
@@ -916,6 +929,33 @@ const handleCompleteMultipartUpload = async (
 
   const parts = parseCompleteMultipartBody(body);
   const storedParts = await listMultipartParts(uploadId);
+
+  // Validate parts match stored parts in ascending order and correct ETags
+  const sortedParts = [...parts].sort((a, b) => a.partNumber - b.partNumber);
+  for (let i = 0; i < sortedParts.length; i++) {
+    if (sortedParts[i].partNumber !== i + 1) {
+      return s3ErrorResponse(
+        'InvalidPartOrder',
+        'The list of parts was not in ascending order. Parts must be ordered by part number.',
+        `/${bucket}/${key}`,
+        400,
+        reqId,
+      );
+    }
+  }
+  const storedMap = new Map(storedParts.map((p) => [p.partNumber, p]));
+  for (const part of parts) {
+    const stored = storedMap.get(part.partNumber);
+    if (!stored || stored.etag !== part.etag) {
+      return s3ErrorResponse(
+        'InvalidPart',
+        'One or more specified parts could not be found. The part might not have been uploaded, or the specified ETag might not match.',
+        `/${bucket}/${key}`,
+        400,
+        reqId,
+      );
+    }
+  }
 
   if (parts.length !== storedParts.length) {
     return s3ErrorResponse(
@@ -958,10 +998,47 @@ const handleCompleteMultipartUpload = async (
   const combinedEtag = storedParts.map((p) => p.etag).join('-');
   const xml = completeMultipartUploadXml(bucket, key, combinedEtag, location);
 
-  return new Response(xml, {
-    status: 200,
-    headers: { 'content-type': 'application/xml', 'x-amz-request-id': reqId },
-  });
+  return s3Response(xml, 200, reqId, { 'content-type': 'application/xml' });
+};
+
+const handleListMultipartUploads = async (
+  bucket: string,
+  searchParams: URLSearchParams,
+  reqId: string,
+): Promise<Response> => {
+  const bucketRecord = await findBucketByName(bucket);
+  if (!bucketRecord)
+    return s3ErrorResponse(
+      'NoSuchBucket',
+      'The specified bucket does not exist.',
+      `/${bucket}`,
+      404,
+      reqId,
+    );
+
+  const maxUploads = Math.min(parseInt(searchParams.get('max-uploads') || '1000', 10), 1000);
+  const keyMarker = searchParams.get('key-marker') || null;
+  const { uploads, isTruncated, nextKeyMarker } = await listMultipartUploadsByBucket(
+    bucketRecord.id,
+    maxUploads,
+    keyMarker,
+  );
+
+  const xml = listMultipartUploadsXml(
+    bucket,
+    uploads.map((u) => ({
+      key: u.s3Key,
+      uploadId: u.uploadId,
+      initiatedAt: u.initiatedAt,
+      initiatedBy: u.initiatedBy,
+    })),
+    maxUploads,
+    isTruncated,
+    nextKeyMarker,
+    reqId,
+  );
+
+  return s3Response(xml, 200, reqId, { 'content-type': 'application/xml' });
 };
 
 const handleAbortMultipartUpload = async (
@@ -983,7 +1060,7 @@ const handleAbortMultipartUpload = async (
   }
 
   await abortMultipartUpload(uploadId);
-  return new Response(null, { status: 204, headers: { 'x-amz-request-id': reqId } });
+  return s3Response(null, 204, reqId);
 };
 
 const handleListParts = async (
@@ -1022,8 +1099,5 @@ const handleListParts = async (
     reqId,
   );
 
-  return new Response(xml, {
-    status: 200,
-    headers: { 'content-type': 'application/xml', 'x-amz-request-id': reqId },
-  });
+  return s3Response(xml, 200, reqId, { 'content-type': 'application/xml' });
 };

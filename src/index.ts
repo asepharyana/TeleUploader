@@ -13,6 +13,7 @@ import logger from './utils/logger';
 import { metricsCollector } from './utils/metrics';
 import { cleanupRateLimitCache, withRateLimit } from './utils/rateLimit';
 import { isS3Request } from './utils/s3/auth';
+import { extractS3BucketFromHost } from './utils/s3/virtual-host';
 
 // ─── Auto-run migration at startup ──────────────────────────────────────────
 try {
@@ -29,6 +30,29 @@ try {
   // migrate.ts calls process.exit(1) on failure — if it throws, log and continue
   logger.warn('Auto-migration warning (non-fatal)');
 }
+
+const getS3RouteBucket = (req: Request): string | null => {
+  const host = req.headers.get('host') || '';
+  return extractS3BucketFromHost(host, config.s3VhostDomains);
+};
+
+const shouldHandleS3 = (req: Request, headers: Record<string, string>): boolean => {
+  const url = new URL(req.url);
+  return Boolean(
+    getS3RouteBucket(req) || isS3Request(headers) || url.searchParams.has('X-Amz-Signature'),
+  );
+};
+
+const handleMaybeS3Root = (req: Request): Response | Promise<Response> => {
+  if (req.method === 'OPTIONS') {
+    return handleS3Request(req, getS3RouteBucket(req));
+  }
+  const headers = Object.fromEntries(req.headers);
+  if (shouldHandleS3(req, headers)) {
+    return handleS3Request(req, getS3RouteBucket(req));
+  }
+  return new Response('Not Allowed', { status: 405 });
+};
 
 const server = serve({
   port: config.port,
@@ -54,40 +78,16 @@ const server = serve({
     '/': {
       GET: (req: Request) => {
         const headers = Object.fromEntries(req.headers);
-        const url = new URL(req.url);
-        if (isS3Request(headers) || url.searchParams.has('X-Amz-Signature')) {
-          return handleS3Request(req);
+        if (shouldHandleS3(req, headers)) {
+          return handleS3Request(req, getS3RouteBucket(req));
         }
         return handleHome();
       },
-      PUT: (req: Request) => {
-        const headers = Object.fromEntries(req.headers);
-        if (isS3Request(headers)) {
-          return handleS3Request(req);
-        }
-        return new Response('Not Allowed', { status: 405 });
-      },
-      HEAD: (req: Request) => {
-        const headers = Object.fromEntries(req.headers);
-        if (isS3Request(headers)) {
-          return handleS3Request(req);
-        }
-        return new Response('Not Allowed', { status: 405 });
-      },
-      DELETE: (req: Request) => {
-        const headers = Object.fromEntries(req.headers);
-        if (isS3Request(headers)) {
-          return handleS3Request(req);
-        }
-        return new Response('Not Allowed', { status: 405 });
-      },
-      POST: (req: Request) => {
-        const headers = Object.fromEntries(req.headers);
-        if (isS3Request(headers)) {
-          return handleS3Request(req);
-        }
-        return new Response('Not Allowed', { status: 405 });
-      },
+      PUT: handleMaybeS3Root,
+      HEAD: handleMaybeS3Root,
+      DELETE: handleMaybeS3Root,
+      POST: handleMaybeS3Root,
+      OPTIONS: handleMaybeS3Root,
     },
     '/api/v1/*': {
       GET: handleWebApiV1,
@@ -97,9 +97,12 @@ const server = serve({
     },
   },
   fetch: async (req: Request) => {
+    if (req.method === 'OPTIONS') {
+      return handleS3Request(req, getS3RouteBucket(req));
+    }
     const headers = Object.fromEntries(req.headers);
-    if (isS3Request(headers) || new URL(req.url).searchParams.has('X-Amz-Signature')) {
-      return handleS3Request(req);
+    if (shouldHandleS3(req, headers)) {
+      return handleS3Request(req, getS3RouteBucket(req));
     }
     return new Response('Not Found', { status: 404 });
   },

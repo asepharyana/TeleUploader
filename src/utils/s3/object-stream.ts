@@ -1,3 +1,4 @@
+import { applyS3Headers } from './headers';
 import { contentRange, type RangeParseResult } from './range';
 
 export interface ObjectPartSource {
@@ -97,7 +98,7 @@ export const createGetObjectResponse = async (input: ObjectResponseInput): Promi
   const end = input.range.type === 'valid' ? input.range.end : input.totalSize - 1;
   const plannedParts = planParts(input.parts, start, end);
   const contentLength = end >= start ? end - start + 1 : 0;
-  const headers = baseHeaders(input, contentLength);
+  const headers = applyS3Headers(baseHeaders(input, contentLength), input.reqId);
 
   if (input.range.type === 'valid') {
     headers.set('content-range', contentRange(start, end, input.totalSize));
