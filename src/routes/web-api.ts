@@ -83,7 +83,7 @@ export const handleListObjectsV1 = async (req: Request, params: RouteParams): Pr
       key: o.s3Key,
       fileName: o.fileName,
       mimeType: o.mimeType,
-      sizeBytes: o.sizeBytes,
+      sizeBytes: Number(o.sizeBytes),
       fileType: o.fileType,
       etag: o.fileHash,
       lastModified:

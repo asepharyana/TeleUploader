@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, describe, expect, it, mock } from 'bun:test';
+import { afterAll, beforeAll, beforeEach, describe, expect, it, mock } from 'bun:test';
 
 const mockBuckets = [
   {
@@ -8,6 +8,9 @@ const mockBuckets = [
     updatedAt: new Date('2026-01-01'),
   },
 ];
+
+let mockObjects: Record<string, unknown>[] = [];
+let mockPrefixes: string[] = [];
 
 mock.module('../src/db/buckets', () => ({
   listBuckets: () => Promise.resolve(mockBuckets),
@@ -21,7 +24,7 @@ mock.module('../src/db/buckets', () => ({
 
 mock.module('../src/db/files-ext', () => ({
   findFileByBucketAndKey: () => Promise.resolve(null),
-  listObjectsByPrefix: () => Promise.resolve({ objects: [], prefixes: [] }),
+  listObjectsByPrefix: () => Promise.resolve({ objects: mockObjects, prefixes: mockPrefixes }),
   softDeleteFile: () => Promise.resolve(true),
   softDeleteFilesBatch: () => Promise.resolve(0),
   countBucketObjects: () => Promise.resolve(0),
@@ -56,6 +59,11 @@ describe('Web API v1', () => {
     handleWebApiV1 = webApi.handleWebApiV1;
   });
 
+  beforeEach(() => {
+    mockObjects = [];
+    mockPrefixes = [];
+  });
+
   afterAll(() => {
     mock.restore();
   });
@@ -88,5 +96,28 @@ describe('Web API v1', () => {
     expect(res.status).toBe(400);
     const data = (await res.json()) as { error: string };
     expect(data.error).toContain('Invalid bucket name');
+  });
+
+  it('should normalize listed object sizeBytes to a number', async () => {
+    mockObjects = [
+      {
+        s3Key: 'tiny.txt',
+        fileName: 'tiny.txt',
+        mimeType: 'text/plain',
+        sizeBytes: '12',
+        fileType: 'document',
+        fileHash: 'etag',
+        createdAt: new Date('2026-01-01T00:00:00Z'),
+        publicId: 'public-id',
+      },
+    ];
+
+    const req = new Request('http://localhost:3000/api/v1/buckets/test-bucket/objects');
+    const res = await handleWebApiV1(req);
+
+    expect(res.status).toBe(200);
+    const data = (await res.json()) as { objects: { sizeBytes: unknown }[] };
+    expect(data.objects[0].sizeBytes).toBe(12);
+    expect(typeof data.objects[0].sizeBytes).toBe('number');
   });
 });

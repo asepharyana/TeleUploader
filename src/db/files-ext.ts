@@ -31,20 +31,21 @@ const mapDbRowToS3Record = (row: Record<string, unknown>): S3FileRecord => {
     publicId: row.public_id as string,
     telegramFileId: row.telegram_file_id as string,
     telegramFileUniqueId: row.telegram_file_unique_id as string,
-    storageChatId: row.storage_chat_id as number,
-    storageMessageId: row.storage_message_id as number,
+    storageChatId: toNumber(row.storage_chat_id),
+    storageMessageId: toNumber(row.storage_message_id),
     fileName: row.file_name as string,
     mimeType: row.mime_type as string,
-    sizeBytes: row.size_bytes as number,
+    sizeBytes: toNumber(row.size_bytes),
     fileType: row.file_type as string,
-    uploaderId: row.uploader_id as number,
+    uploaderId: toNumber(row.uploader_id),
     fileHash: row.file_hash as string | null,
     archiveTelegramFileId: row.archive_telegram_file_id as string | null,
-    archiveStorageMessageId: row.archive_storage_message_id as number | null,
+    archiveStorageMessageId:
+      row.archive_storage_message_id === null ? null : toNumber(row.archive_storage_message_id),
     archiveFileName: row.archive_file_name as string | null,
     archiveEntryName: row.archive_entry_name as string | null,
     archiveMimeType: row.archive_mime_type as string | null,
-    archiveSizeBytes: row.archive_size_bytes as number | null,
+    archiveSizeBytes: row.archive_size_bytes === null ? null : toNumber(row.archive_size_bytes),
     bucketId: row.bucket_id as string,
     s3Key: row.s3_key as string,
     storageBackend: (row.storage_backend as string) || 'telegram',
@@ -56,6 +57,8 @@ const mapDbRowToS3Record = (row: Record<string, unknown>): S3FileRecord => {
 };
 
 const escapeLike = (s: string): string => s.replace(/[%_\\]/g, '\\$&');
+
+const toNumber = (value: unknown): number => Number(value ?? 0);
 
 export const listObjectsByPrefix = async (
   bucketId: string,

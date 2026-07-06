@@ -202,7 +202,7 @@
       }
       container.innerHTML = html;
     };
-    const formatSize = (bytes) => { if (!bytes) return '0 B'; const u = ['B','KB','MB','GB','TB']; let i=0,s=bytes; while(s>=1024&&i<u.length-1){s/=1024;i++} return `${s.toFixed(i>0?1:0)} ${u[i]}`; };
+    const formatSize = (bytes) => { const size = Number(bytes); if (!Number.isFinite(size) || size <= 0) return '0 B'; const u = ['B','KB','MB','GB','TB']; let i=0,s=size; while(s>=1024&&i<u.length-1){s/=1024;i++} return `${s.toFixed(i>0?1:0)} ${u[i]}`; };
     const formatDate = (iso) => { if(!iso)return ''; return new Date(iso).toLocaleDateString(undefined,{month:'short',day:'numeric',year:'numeric'}); };
     const escapeHtml = (s) => { const d=document.createElement('div');d.textContent=s;return d.innerHTML; };
     const debouncedSearch = () => { clearTimeout(searchTimer); searchTimer = setTimeout(loadObjects, 300); };
