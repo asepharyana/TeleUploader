@@ -16,6 +16,9 @@ interface AppConfig {
   batchMaxItems: number;
   batchMaxSizeBytes: number;
   maxRequestBodyBytes: number;
+  s3AccessKey: string;
+  s3SecretKey: string;
+  s3DefaultRegion: string;
 }
 
 const requiredEnv = {
@@ -72,6 +75,9 @@ export const config: AppConfig = {
   batchMaxItems: parseNumber(process.env.BATCH_MAX_ITEMS, 20),
   batchMaxSizeBytes: parseNumber(process.env.BATCH_MAX_SIZE_BYTES, 500 * 1024 * 1024),
   maxRequestBodyBytes: parseNumber(process.env.MAX_REQUEST_BODY_BYTES, 2 * 1024 * 1024 * 1024),
+  s3AccessKey: process.env.S3_ACCESS_KEY || 'teleuploader-admin',
+  s3SecretKey: process.env.S3_SECRET_KEY || '',
+  s3DefaultRegion: process.env.S3_DEFAULT_REGION || 'us-east-1',
 };
 
 logger.info('Environment variables loaded', {
@@ -80,5 +86,7 @@ logger.info('Environment variables loaded', {
     botToken: maskSecret(config.botToken),
     additionalBotTokens: config.additionalBotTokens.map(maskSecret),
     databaseUrl: maskDatabaseUrl(config.databaseUrl),
+    s3AccessKey: maskSecret(config.s3AccessKey),
+    s3SecretKey: maskSecret(config.s3SecretKey),
   },
 });

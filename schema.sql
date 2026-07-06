@@ -27,3 +27,49 @@ CREATE INDEX IF NOT EXISTS idx_files_file_hash ON files(file_hash);
 CREATE INDEX IF NOT EXISTS idx_files_archive_telegram_file_id ON files(archive_telegram_file_id);
 CREATE INDEX IF NOT EXISTS idx_files_uploader_id ON files(uploader_id);
 CREATE INDEX IF NOT EXISTS idx_files_created_at ON files(created_at DESC);
+
+-- S3-compatible buckets
+CREATE TABLE IF NOT EXISTS buckets (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  name VARCHAR(63) UNIQUE NOT NULL,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Extend files table for S3
+ALTER TABLE files ADD COLUMN IF NOT EXISTS bucket_id UUID REFERENCES buckets(id);
+ALTER TABLE files ADD COLUMN IF NOT EXISTS s3_key TEXT;
+ALTER TABLE files ADD COLUMN IF NOT EXISTS storage_backend VARCHAR DEFAULT 'telegram';
+ALTER TABLE files ADD COLUMN IF NOT EXISTS is_deleted BOOLEAN DEFAULT false;
+ALTER TABLE files ADD COLUMN IF NOT EXISTS multipart_upload_id TEXT;
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_files_bucket_key ON files(bucket_id, s3_key) WHERE is_deleted = false;
+CREATE INDEX IF NOT EXISTS idx_files_bucket_prefix ON files(bucket_id, s3_key text_pattern_ops);
+CREATE INDEX IF NOT EXISTS idx_files_s3_key ON files(s3_key);
+CREATE INDEX IF NOT EXISTS idx_files_bucket_id ON files(bucket_id);
+
+-- Multipart upload tracking
+CREATE TABLE IF NOT EXISTS multipart_uploads (
+  upload_id VARCHAR PRIMARY KEY,
+  bucket_id UUID NOT NULL REFERENCES buckets(id),
+  s3_key TEXT NOT NULL,
+  initiated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  status VARCHAR DEFAULT 'in_progress',
+  initiated_by TEXT
+);
+
+CREATE TABLE IF NOT EXISTS multipart_parts (
+  id SERIAL PRIMARY KEY,
+  upload_id VARCHAR NOT NULL REFERENCES multipart_uploads(upload_id) ON DELETE CASCADE,
+  part_number INT NOT NULL,
+  telegram_file_id VARCHAR NOT NULL,
+  telegram_file_unique_id VARCHAR NOT NULL,
+  storage_message_id BIGINT NOT NULL,
+  size_bytes BIGINT NOT NULL,
+  etag VARCHAR NOT NULL,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE(upload_id, part_number)
+);
+
+CREATE INDEX IF NOT EXISTS idx_multipart_parts_upload ON multipart_parts(upload_id, part_number);
+CREATE INDEX IF NOT EXISTS idx_multipart_uploads_status ON multipart_uploads(status);
