@@ -19,8 +19,10 @@
 import { afterAll, describe, expect, it } from 'bun:test';
 import {
   AbortMultipartUploadCommand,
+  CompleteMultipartUploadCommand,
   CopyObjectCommand,
   CreateBucketCommand,
+  CreateMultipartUploadCommand,
   DeleteBucketCommand,
   DeleteObjectCommand,
   DeleteObjectsCommand,
@@ -35,6 +37,7 @@ import {
   NotFound,
   PutObjectCommand,
   S3Client,
+  UploadPartCommand,
 } from '@aws-sdk/client-s3';
 
 // ── Config ───────────────────────────────────────────────────────────────────
@@ -276,6 +279,49 @@ describe('S3 SDK compatibility', () => {
     }
   });
 
+  // ── Multipart upload ───────────────────────────────────────────────────────
+
+  it('Multipart upload works with AWS SDK under strict SigV4', async () => {
+    let uploadId: string | undefined;
+    try {
+      const created = await s3.send(
+        new CreateMultipartUploadCommand({ Bucket: BUCKET, Key: 'sdk-multipart.txt' }),
+      );
+      uploadId = created.UploadId;
+      expect(uploadId).toBeTruthy();
+
+      const part1 = await s3.send(
+        new UploadPartCommand({ Bucket: BUCKET, Key: 'sdk-multipart.txt', UploadId: uploadId, PartNumber: 1, Body: 'hello ' }),
+      );
+      const part2 = await s3.send(
+        new UploadPartCommand({ Bucket: BUCKET, Key: 'sdk-multipart.txt', UploadId: uploadId, PartNumber: 2, Body: 'sdk multipart' }),
+      );
+
+      await s3.send(
+        new CompleteMultipartUploadCommand({
+          Bucket: BUCKET,
+          Key: 'sdk-multipart.txt',
+          UploadId: uploadId,
+          MultipartUpload: {
+            Parts: [
+              { ETag: part1.ETag, PartNumber: 1 },
+              { ETag: part2.ETag, PartNumber: 2 },
+            ],
+          },
+        }),
+      );
+      uploadId = undefined;
+
+      const { Body } = await s3.send(new GetObjectCommand({ Bucket: BUCKET, Key: 'sdk-multipart.txt' }));
+      expect(await Body!.transformToString()).toBe('hello sdk multipart');
+    } finally {
+      if (uploadId) {
+        await s3.send(new AbortMultipartUploadCommand({ Bucket: BUCKET, Key: 'sdk-multipart.txt', UploadId: uploadId })).catch(() => {});
+      }
+      await s3.send(new DeleteObjectCommand({ Bucket: BUCKET, Key: 'sdk-multipart.txt' })).catch(() => {});
+    }
+  });
+
   // ── Cleanup & delete bucket ────────────────────────────────────────────────
 
   it('DeleteBucket succeeds for empty bucket', async () => {
@@ -285,19 +331,6 @@ describe('S3 SDK compatibility', () => {
 
     await s3.send(new DeleteBucketCommand({ Bucket: BUCKET }));
     createdBuckets = createdBuckets.filter((b) => b !== BUCKET);
-  });
-
-  // ── Multipart upload (via manual signer — AWS SDK adds extra signed headers
-  //    that may differ from what the server receives through Cloudflare,
-  //    causing a 403 SignatureDoesNotMatch. Multipart is verified in
-  //    test/production-e2e.test.ts using a manual SigV4 signer.) ───────────────
-
-  it('Multipart upload — verified in production-e2e.test.ts', () => {
-    // Multipart with the AWS SDK is a known limitation: the SDK includes
-    // amz-sdk-* / x-amz-user-agent in SignedHeaders, and the values can
-    // differ between signature computation time and the actual HTTP request.
-    // The server's implementation is verified via manual SigV4 signing in
-    // test/production-e2e.test.ts (S3 API > Multipart upload).
   });
 
   // ── Error handling ─────────────────────────────────────────────────────────
