@@ -8,7 +8,11 @@
     "build": "bun build src/index.ts --target=bun --outfile=dist/index.js && bun build src/db/migrate.ts --target=bun --outfile=dist/migrate.js",
     "start": "NODE_ENV=production bun dist/index.js",
     "db:migrate": "bun dist/migrate.js",
-    "test": "bun test test/rateLimit.test.ts && bun test test/file.test.ts && bun test test/telegram.test.ts && bun test test/upload.test.ts && bun test test/files.test.ts && bun test test/health.test.ts && bun test test/bot.test.ts && bun test test/bootstrap.test.ts && bun test test/swagger.test.ts",
+    "test": "bun test test/rateLimit.test.ts && bun test test/file.test.ts && bun test test/telegram.test.ts && bun test test/upload.test.ts && bun test test/files.test.ts && bun test test/health.test.ts && bun test test/bot.test.ts && bun test test/bootstrap.test.ts && bun test test/swagger.test.ts && bun test test/s3-auth.test.ts && bun test test/s3-operations.test.ts && bun test test/web-api.test.ts",
+    "test:s3-auth": "bun test test/s3-auth.test.ts",
+    "test:s3-ops": "bun test test/s3-operations.test.ts",
+    "test:web-api": "bun test test/web-api.test.ts",
+    "test:s3": "bun test test/s3-auth.test.ts && bun test test/s3-operations.test.ts && bun test test/web-api.test.ts",
     "lint": "bunx biome check src test",
     "format": "bunx biome format --write src test"
   },
