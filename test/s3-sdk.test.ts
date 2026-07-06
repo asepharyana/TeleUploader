@@ -16,25 +16,25 @@
  * CAUTION: creates & destroys real resources on the production server!
  */
 
-import { describe, expect, it, afterAll } from 'bun:test';
+import { afterAll, describe, expect, it } from 'bun:test';
 import {
-  S3Client,
-  ListBucketsCommand,
-  CreateBucketCommand,
-  HeadBucketCommand,
-  DeleteBucketCommand,
-  PutObjectCommand,
-  GetObjectCommand,
-  HeadObjectCommand,
-  ListObjectsV2Command,
-  ListObjectsCommand,
+  AbortMultipartUploadCommand,
   CopyObjectCommand,
+  CreateBucketCommand,
+  DeleteBucketCommand,
   DeleteObjectCommand,
   DeleteObjectsCommand,
+  GetObjectCommand,
+  HeadBucketCommand,
+  HeadObjectCommand,
+  ListBucketsCommand,
   ListMultipartUploadsCommand,
-  AbortMultipartUploadCommand,
+  ListObjectsCommand,
+  ListObjectsV2Command,
   NoSuchKey,
   NotFound,
+  PutObjectCommand,
+  S3Client,
 } from '@aws-sdk/client-s3';
 
 // ── Config ───────────────────────────────────────────────────────────────────
@@ -66,21 +66,29 @@ afterAll(async () => {
       if (keys.length) {
         await s3.send(new DeleteObjectsCommand({ Bucket: b, Delete: { Objects: keys } }));
       }
-    } catch { /* best-effort */ }
+    } catch {
+      /* best-effort */
+    }
     // Clean up any multipart uploads
     try {
-      const { Uploads = [] } = await s3.send(
-        new ListMultipartUploadsCommand({ Bucket: b }),
-      );
+      const { Uploads = [] } = await s3.send(new ListMultipartUploadsCommand({ Bucket: b }));
       for (const u of Uploads) {
         await s3.send(
           new AbortMultipartUploadCommand({
-            Bucket: b, Key: u.Key!, UploadId: u.UploadId!,
+            Bucket: b,
+            Key: u.Key!,
+            UploadId: u.UploadId!,
           }),
         );
       }
-    } catch { /* best-effort */ }
-    try { await s3.send(new DeleteBucketCommand({ Bucket: b })); } catch { /* best-effort */ }
+    } catch {
+      /* best-effort */
+    }
+    try {
+      await s3.send(new DeleteBucketCommand({ Bucket: b }));
+    } catch {
+      /* best-effort */
+    }
   }
 });
 
@@ -234,9 +242,7 @@ describe('S3 SDK compatibility', () => {
   it('DeleteObject removes a single object', async () => {
     await s3.send(new DeleteObjectCommand({ Bucket: BUCKET, Key: 'folder/nested-file.txt' }));
     // Verify deletion
-    const { Contents } = await s3.send(
-      new ListObjectsV2Command({ Bucket: BUCKET }),
-    );
+    const { Contents } = await s3.send(new ListObjectsV2Command({ Bucket: BUCKET }));
     expect(Contents!.some((o) => o.Key === 'folder/nested-file.txt')).toBe(false);
   });
 
@@ -255,9 +261,7 @@ describe('S3 SDK compatibility', () => {
     expect(Deleted).toHaveLength(3);
     expect(Errors).toBeUndefined();
     // Verify all deleted
-    const { Contents } = await s3.send(
-      new ListObjectsV2Command({ Bucket: BUCKET }),
-    );
+    const { Contents } = await s3.send(new ListObjectsV2Command({ Bucket: BUCKET }));
     for (const k of ['del-a.txt', 'del-b.txt', 'del-c.txt']) {
       expect(Contents!.some((o) => o.Key === k)).toBe(false);
     }

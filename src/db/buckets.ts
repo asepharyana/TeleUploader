@@ -52,15 +52,21 @@ export const listBuckets = async (): Promise<Bucket[]> => {
 
 export const deleteBucket = async (name: string): Promise<boolean> => {
   // Cascade-delete rows that hold FK references to the bucket
-  await db.execute(
-    sql`DELETE FROM multipart_parts WHERE upload_id IN (SELECT upload_id FROM multipart_uploads WHERE bucket_id IN (SELECT id FROM buckets WHERE name = ${name}))`,
-  ).catch(() => {});
-  await db.execute(
-    sql`DELETE FROM multipart_uploads WHERE bucket_id IN (SELECT id FROM buckets WHERE name = ${name})`,
-  ).catch(() => {});
-  await db.execute(
-    sql`DELETE FROM files WHERE bucket_id IN (SELECT id FROM buckets WHERE name = ${name})`,
-  ).catch(() => {});
+  await db
+    .execute(
+      sql`DELETE FROM multipart_parts WHERE upload_id IN (SELECT upload_id FROM multipart_uploads WHERE bucket_id IN (SELECT id FROM buckets WHERE name = ${name}))`,
+    )
+    .catch(() => {});
+  await db
+    .execute(
+      sql`DELETE FROM multipart_uploads WHERE bucket_id IN (SELECT id FROM buckets WHERE name = ${name})`,
+    )
+    .catch(() => {});
+  await db
+    .execute(
+      sql`DELETE FROM files WHERE bucket_id IN (SELECT id FROM buckets WHERE name = ${name})`,
+    )
+    .catch(() => {});
   const result = (await db.execute(
     sql`DELETE FROM buckets WHERE name = ${name}`,
   )) as unknown as QueryResult;

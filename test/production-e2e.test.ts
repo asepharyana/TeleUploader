@@ -11,7 +11,7 @@
  *   S3_SECRET_KEY=xxx bun test test/production-e2e.test.ts
  */
 
-import { describe, expect, it, afterAll } from 'bun:test';
+import { afterAll, describe, expect, it } from 'bun:test';
 
 // ── Config ───────────────────────────────────────────────────────────────────
 const BASE_URL = process.env.BASE_URL || 'https://upload.asepharyana.my.id';
@@ -26,7 +26,9 @@ let createdBuckets: string[] = [];
 function sha256hex(data: string | Uint8Array): string {
   const h = new Bun.CryptoHasher('sha256');
   h.update(data);
-  return Array.from(h.digest()).map((b) => b.toString(16).padStart(2, '0')).join('');
+  return Array.from(h.digest())
+    .map((b) => b.toString(16).padStart(2, '0'))
+    .join('');
 }
 
 function hmacSha256(key: Uint8Array, msg: string): Uint8Array {
@@ -37,13 +39,16 @@ function hmacSha256(key: Uint8Array, msg: string): Uint8Array {
 
 function getSigningKey(secret: string, ds: string, region: string): Uint8Array {
   const enc = (s: string) => new TextEncoder().encode(s);
-  let k = hmacSha256(enc('AWS4' + secret), ds);
-  k = hmacSha256(k, region);  k = hmacSha256(k, 's3');
+  let k = hmacSha256(enc(`AWS4${secret}`), ds);
+  k = hmacSha256(k, region);
+  k = hmacSha256(k, 's3');
   return hmacSha256(k, 'aws4_request');
 }
 
 function hex(a: Uint8Array): string {
-  return Array.from(a).map((b) => b.toString(16).padStart(2, '0')).join('');
+  return Array.from(a)
+    .map((b) => b.toString(16).padStart(2, '0'))
+    .join('');
 }
 
 /** Build S3 SigV4 authorization headers for a raw HTTP request. */
@@ -51,7 +56,7 @@ function s3Headers(
   method: string,
   host: string,
   path: string,
-  qs: string,            // canonical query string (sorted, URI-encoded)
+  qs: string, // canonical query string (sorted, URI-encoded)
   payloadHash: string,
   extraHeaders: Record<string, string> = {},
 ): Record<string, string> {
@@ -79,7 +84,11 @@ function s3Headers(
 async function s3Request(
   method: string,
   path: string,
-  opts: { body?: Uint8Array; query?: Record<string, string>; headers?: Record<string, string> } = {},
+  opts: {
+    body?: Uint8Array;
+    query?: Record<string, string>;
+    headers?: Record<string, string>;
+  } = {},
 ): Promise<Response> {
   const url = new URL(path, BASE_URL);
   if (opts.query) {
@@ -87,7 +96,14 @@ async function s3Request(
   }
   const rawBody = opts.body ?? new Uint8Array(0);
   const payloadHash = sha256hex(rawBody);
-  const headers = s3Headers(method, url.host, url.pathname, url.searchParams.toString(), payloadHash, opts.headers);
+  const headers = s3Headers(
+    method,
+    url.host,
+    url.pathname,
+    url.searchParams.toString(),
+    payloadHash,
+    opts.headers,
+  );
   return fetch(url.toString(), {
     method,
     headers: { ...headers, 'Content-Type': 'application/octet-stream' },
@@ -103,8 +119,11 @@ const apiJson = (p: string, o: RequestInit = {}) =>
 // ── Shared cleanup ───────────────────────────────────────────────────────────
 afterAll(async () => {
   for (const name of createdBuckets) {
-    try { await fetch(`${BASE_URL}/api/v1/buckets/${name}`, { method: 'DELETE' }); }
-    catch { /* best-effort */ }
+    try {
+      await fetch(`${BASE_URL}/api/v1/buckets/${name}`, { method: 'DELETE' });
+    } catch {
+      /* best-effort */
+    }
   }
 });
 
@@ -116,7 +135,7 @@ describe('Web API v1 (production)', () => {
   it('GET  /api/v1/buckets — returns bucket list', async () => {
     const r = await apiJson('/buckets');
     expect(r.status).toBe(200);
-    const b = await r.json() as { buckets: unknown[] };
+    const b = (await r.json()) as { buckets: unknown[] };
     expect(Array.isArray(b.buckets)).toBe(true);
   });
 
@@ -135,7 +154,10 @@ describe('Web API v1 (production)', () => {
   });
 
   it('POST /api/v1/buckets — rejects invalid name (400)', async () => {
-    const r = await apiJson('/buckets', { method: 'POST', body: JSON.stringify({ name: 'INVALID!' }) });
+    const r = await apiJson('/buckets', {
+      method: 'POST',
+      body: JSON.stringify({ name: 'INVALID!' }),
+    });
     expect(r.status).toBe(400);
   });
 
@@ -154,7 +176,7 @@ describe('Web API v1 (production)', () => {
   it('GET  /api/v1/buckets/:name/objects — lists objects', async () => {
     const r = await apiJson(`/buckets/e2e-web-${TS}/objects`);
     expect(r.status).toBe(200);
-    const b = await r.json() as { objects: unknown[] };
+    const b = (await r.json()) as { objects: unknown[] };
     expect(Array.isArray(b.objects)).toBe(true);
   });
 
@@ -162,9 +184,12 @@ describe('Web API v1 (production)', () => {
     const fd = new FormData();
     fd.append('file', new Blob(['hello']), 'hello.txt');
     fd.append('key', 'hello.txt');
-    const r = await fetch(`${BASE_URL}/api/v1/buckets/e2e-web-${TS}/upload`, { method: 'POST', body: fd });
+    const r = await fetch(`${BASE_URL}/api/v1/buckets/e2e-web-${TS}/upload`, {
+      method: 'POST',
+      body: fd,
+    });
     expect(r.status).toBe(201);
-    const b = await r.json() as { key: string; etag: string };
+    const b = (await r.json()) as { key: string; etag: string };
     expect(b.key).toBe('hello.txt');
     expect(b.etag).toBeTruthy();
   });
@@ -172,7 +197,7 @@ describe('Web API v1 (production)', () => {
   it('GET  /api/v1/buckets/:name/objects — file now present', async () => {
     const r = await apiJson(`/buckets/e2e-web-${TS}/objects`);
     expect(r.status).toBe(200);
-    const b = await r.json() as { objects: { key: string }[] };
+    const b = (await r.json()) as { objects: { key: string }[] };
     expect(b.objects.some((o) => o.key === 'hello.txt')).toBe(true);
   });
 
@@ -270,7 +295,9 @@ describe('S3 API (production, SigV4)', () => {
   });
 
   it('ListObjectsV2 — continuation', async () => {
-    const r = await s3Request('GET', `/${bucketName}`, { query: { 'list-type': '2', 'max-keys': '1' } });
+    const r = await s3Request('GET', `/${bucketName}`, {
+      query: { 'list-type': '2', 'max-keys': '1' },
+    });
     expect(r.status).toBe(200);
     const xml = await r.text();
     expect(xml).toContain('IsTruncated');
@@ -285,7 +312,8 @@ describe('S3 API (production, SigV4)', () => {
     const content = new TextEncoder().encode('del');
     await s3Request('PUT', `/${bucketName}/batch-1.txt`, { body: content });
     await s3Request('PUT', `/${bucketName}/batch-2.txt`, { body: content });
-    const deleteBody = '<Delete><Object><Key>batch-1.txt</Key></Object><Object><Key>batch-2.txt</Key></Object></Delete>';
+    const deleteBody =
+      '<Delete><Object><Key>batch-1.txt</Key></Object><Object><Key>batch-2.txt</Key></Object></Delete>';
     const r = await s3Request('POST', `/${bucketName}`, {
       query: { delete: '' },
       body: new TextEncoder().encode(deleteBody),
@@ -326,7 +354,9 @@ describe('S3 API (production, SigV4)', () => {
     });
     // Sort keys to match server's alphabetical sort
     const sorted = [...sp.entries()].sort(([a], [b]) => a.localeCompare(b));
-    const canonicalQs = sorted.map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(v)}`).join('&');
+    const canonicalQs = sorted
+      .map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(v)}`)
+      .join('&');
 
     const canonical = `GET\n/${bucketName}/presigned-test.txt\n${canonicalQs}\nhost:${host}\n\nhost\nUNSIGNED-PAYLOAD`;
     const hcr = sha256hex(canonical);
@@ -373,7 +403,8 @@ describe('S3 API (production, SigV4)', () => {
   it('S3 error — bad signature returns 403', async () => {
     const r = await fetch(`${BASE_URL}/`, {
       headers: {
-        Authorization: 'AWS4-HMAC-SHA256 Credential=fake/20260701/us-east-1/s3/aws4_request, SignedHeaders=host, Signature=00',
+        Authorization:
+          'AWS4-HMAC-SHA256 Credential=fake/20260701/us-east-1/s3/aws4_request, SignedHeaders=host, Signature=00',
         'x-amz-date': '20260701T000000Z',
         'x-amz-content-sha256': 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855',
       },

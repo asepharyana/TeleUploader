@@ -3,16 +3,16 @@ import { startBot } from './bot';
 import { config } from './env';
 import { handleFileInfo, handleFileRedirect } from './routes/files';
 import { handleHealth } from './routes/health';
+import { handleHome } from './routes/home';
+import { handleS3Request } from './routes/s3';
 import { handleSwaggerHtml, handleSwaggerJson } from './routes/swagger';
 import { handleUpload } from './routes/upload';
-import { handleHome } from './routes/home';
 import { handleWebApiV1 } from './routes/web-api';
-import { handleS3Request } from './routes/s3';
-import { isS3Request } from './utils/s3/auth';
 import { fileInfoCache } from './utils/cache';
 import logger from './utils/logger';
 import { metricsCollector } from './utils/metrics';
 import { cleanupRateLimitCache, withRateLimit } from './utils/rateLimit';
+import { isS3Request } from './utils/s3/auth';
 
 // ─── Auto-run migration at startup ──────────────────────────────────────────
 try {

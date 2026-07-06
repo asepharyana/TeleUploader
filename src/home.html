@@ -118,14 +118,14 @@
 <body>
   <div class="topbar">
     <span class="logo">📦 TeleUploader</span>
-    <select id="bucketSelect" onchange="switchBucket(this.value)">
+    <select id="bucketSelect" onchange="window.switchBucket(this.value)">
       <option value="">— Select bucket —</option>
     </select>
-    <button onclick="showCreateBucketModal()">+ New</button>
-    <button onclick="showCredentialsModal()" title="S3 Credentials">🔑</button>
+    <button type="button" onclick="window.showCreateBucketModal()">+ New</button>
+    <button type="button" onclick="window.showCredentialsModal()" title="S3 Credentials">🔑</button>
     <span class="spacer"></span>
     <div class="search">
-      <input id="searchInput" type="text" placeholder="Filter prefix..." oninput="debouncedSearch()">
+      <input id="searchInput" type="text" placeholder="Filter prefix..." oninput="window.debouncedSearch()">
     </div>
   </div>
   <div id="breadcrumb" class="breadcrumb" style="display:none;padding:8px 24px"></div>
@@ -156,7 +156,7 @@
       const data = await apiJson('/api/v1/buckets');
       allBuckets = data.buckets || [];
       const sel = document.getElementById('bucketSelect');
-      sel.innerHTML = '<option value="">— Select bucket —</option>' + allBuckets.map(b => `<option value="${b.name}">${b.name} (${b.objectCount})</option>`).join('');
+      sel.innerHTML = `<option value="">— Select bucket —</option>${allBuckets.map(b => `<option value="${b.name}">${b.name} (${b.objectCount})</option>`).join('')}`;
       if (currentBucket) sel.value = currentBucket;
     };
     const switchBucket = async (name) => {
@@ -172,9 +172,9 @@
       if (!currentPrefix) { bc.style.display = 'none'; return; }
       bc.style.display = 'block';
       const parts = currentPrefix.split('/').filter(Boolean);
-      bc.innerHTML = `<span onclick="navigateTo('')">${currentBucket}</span>`;
+      bc.innerHTML = `<span onclick="window.navigateTo('')">${currentBucket}</span>`;
       let accumulated = '';
-      for (const part of parts) { accumulated += part + '/'; bc.innerHTML += `<span class="sep">/</span><span onclick="navigateTo('${accumulated}')">${part}</span>`; }
+      for (const part of parts) { accumulated += `${part}/`; bc.innerHTML += `<span class="sep">/</span><span onclick="window.navigateTo('${accumulated}')">${part}</span>`; }
     };
     const navigateTo = (prefix) => { currentPrefix = prefix; loadObjects(); };
     const loadObjects = async () => {
@@ -194,7 +194,7 @@
       let html = '';
       for (const prefix of currentPrefixes) {
         const displayName = prefix.replace(currentPrefix, '');
-        html += `<div class="file-row" onclick="navigateTo('${prefix}')"><span class="icon">🗂</span><span class="name">${displayName.endsWith('/') ? displayName : displayName + '/'}</span><span class="size">—</span><span class="date"></span><span class="actions"></span></div>`;
+        html += `<div class="file-row" onclick="window.navigateTo('${prefix}')"><span class="icon">🗂</span><span class="name">${displayName.endsWith('/') ? displayName : `${displayName}/`}</span><span class="size">—</span><span class="date"></span><span class="actions"></span></div>`;
       }
       for (const obj of currentObjects) {
         const displayName = obj.key.replace(currentPrefix, '');
@@ -222,7 +222,7 @@
         await new Promise((resolve,reject)=>{
           const fd=new FormData(); fd.append('file',file); fd.append('key',currentPrefix+file.name);
           const xhr=new XMLHttpRequest();
-          xhr.upload.onprogress=(e)=>{if(e.lengthComputable){const p=Math.round((e.loaded/e.total)*100);fill.style.width=p+'%';pp.textContent=p+'%';}};
+          xhr.upload.onprogress=(e)=>{if(e.lengthComputable){const p=Math.round((e.loaded/e.total)*100);fill.style.width=`${p}%`;pp.textContent=`${p}%`;}};
           xhr.onload=()=>{if(xhr.status>=200&&xhr.status<300)resolve();else reject(new Error(xhr.statusText));};
           xhr.onerror=()=>reject(new Error('Upload failed'));
           xhr.open('POST',`/api/v1/buckets/${encodeURIComponent(currentBucket)}/upload`); xhr.send(fd);
@@ -239,7 +239,8 @@
     const closeModal=(e)=>{if(e&&e.target!==e.currentTarget)return;document.getElementById('modalOverlay').style.display='none';};
     const showCreateBucketModal=()=>{showModal(`<h3>Create Bucket</h3><input id="bucketNameInput" type="text" placeholder="my-bucket-name" pattern="[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]"><p style="font-size:0.8rem;color:var(--text2);margin-bottom:12px">Lowercase, 3-63 chars, no underscores</p><div class="buttons"><button onclick="closeModal()">Cancel</button><button class="primary" onclick="createBucket()">Create</button></div>`);setTimeout(()=>document.getElementById('bucketNameInput')?.focus(),100);};
     const createBucket=async()=>{const n=document.getElementById('bucketNameInput').value.trim();if(!n)return;try{await apiJson('/api/v1/buckets',{method:'POST',body:JSON.stringify({name:n})});closeModal();await loadBuckets();document.getElementById('bucketSelect').value=n;await switchBucket(n);}catch(e){alert(`Failed: ${e.message}`);}};
-    const showCredentialsModal=()=>{showModal(`<h3>S3 Credentials</h3><p style="margin-bottom:12px;font-size:0.85rem;color:var(--text2)">Use these in any S3 client (aws-cli, rclone, s3cmd, etc.)</p><label style="font-size:0.85rem;font-weight:600">Endpoint URL</label><input type="text" value="${window.location.origin}" readonly onclick="this.select()"><label style="font-size:0.85rem;font-weight:600">Region</label><input type="text" value="us-east-1" readonly onclick="this.select()"><label style="font-size:0.85rem;font-weight:600">Access Key</label><input id="s3AccessKey" type="text" readonly onclick="this.select()"><label style="font-size:0.85rem;font-weight:600">Secret Key</label><input id="s3SecretKey" type="password" readonly onclick="this.select()"><div class="buttons"><button onclick="closeModal()">Close</button></div>`);};
+    const showCredentialsModal=()=>{showModal(`<h3>S3 Credentials</h3><p style="margin-bottom:12px;font-size:0.85rem;color:var(--text2)">Use these in any S3 client (aws-cli, rclone, s3cmd, etc.)</p><label style="font-size:0.85rem;font-weight:600">Endpoint URL</label><input type="text" value="${window.location.origin}" readonly onclick="this.select()"><label style="font-size:0.85rem;font-weight:600">Region</label><input type="text" value="us-east-1" readonly onclick="this.select()"><label style="font-size:0.85rem;font-weight:600">Access Key</label><input id="s3AccessKey" type="text" readonly onclick="this.select()"><label style="font-size:0.85rem;font-weight:600">Secret Key</label><input id="s3SecretKey" type="password" readonly onclick="this.select()"><div class="buttons"><button type="button" onclick="window.closeModal()">Close</button></div>`);};
+    Object.assign(window, { switchBucket, navigateTo, debouncedSearch, downloadObject, copyLink, deleteObject, closeModal, showCreateBucketModal, createBucket, showCredentialsModal });
     loadBuckets();
   </script>
 </body>

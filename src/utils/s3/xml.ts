@@ -12,7 +12,7 @@ const isoDate = (d: Date): string => d.toISOString().replace(/\.\d{3}Z$/, 'Z');
 
 export const listBucketsXml = (
   buckets: { name: string; createdAt: Date }[],
-  requestId: string,
+  _requestId: string,
 ): string => `<?xml version="1.0" encoding="UTF-8"?>
 <ListAllMyBucketsResult xmlns="http://s3.amazonaws.com/doc/2006-03-01/">
   <Buckets>
@@ -39,7 +39,7 @@ export const listBucketResultXml = (
   prefix: string,
   delimiter: string | null,
   nextMarker: string | null,
-  requestId: string,
+  _requestId: string,
 ): string => `<?xml version="1.0" encoding="UTF-8"?>
 <ListBucketResult xmlns="http://s3.amazonaws.com/doc/2006-03-01/">
   <Name>${escapeXml(bucketName)}</Name>
@@ -80,7 +80,7 @@ export const listBucketV2ResultXml = (
   continuationToken: string | null,
   nextContinuationToken: string | null,
   keyCount: number,
-  requestId: string,
+  _requestId: string,
 ): string => `<?xml version="1.0" encoding="UTF-8"?>
 <ListBucketResultV2 xmlns="http://s3.amazonaws.com/doc/2006-03-01/">
   <Name>${escapeXml(bucketName)}</Name>
@@ -131,7 +131,7 @@ export const listPartsXml = (
   parts: { partNumber: number; etag: string; sizeBytes: number; createdAt: Date }[],
   maxParts: number,
   isTruncated: boolean,
-  requestId: string,
+  _requestId: string,
 ): string => `<?xml version="1.0" encoding="UTF-8"?>
 <ListPartsResult xmlns="http://s3.amazonaws.com/doc/2006-03-01/">
   <Bucket>${escapeXml(bucketName)}</Bucket>
@@ -233,12 +233,7 @@ export const s3ErrorResponse = (
 // ─────── DeleteObjects XML parser ───────
 
 export const parseDeleteObjectsBody = (body: string): { keys: string[]; quiet: boolean } => {
-  const keys: string[] = [];
-  const keyRegex = /<Key>([^<]+)<\/Key>/g;
-  let match;
-  while ((match = keyRegex.exec(body)) !== null) {
-    keys.push(match[1]);
-  }
+  const keys = Array.from(body.matchAll(/<Key>([^<]+)<\/Key>/g), (match) => match[1]);
   const quiet = body.includes('<Quiet>true</Quiet>') || body.includes('<Quiet>true ');
   return { keys, quiet };
 };

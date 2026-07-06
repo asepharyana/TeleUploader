@@ -131,8 +131,8 @@ export const verifySignature = async (
   s3SecretKey: string,
   region: string,
 ): Promise<SigV4Result> => {
-  const authHeader = headers['authorization'];
-  if (!authHeader || !authHeader.startsWith('AWS4-HMAC-SHA256')) {
+  const authHeader = headers.authorization;
+  if (!authHeader?.startsWith('AWS4-HMAC-SHA256')) {
     return { isValid: false, credential: null, errorCode: 'AccessDenied' };
   }
 
@@ -276,6 +276,6 @@ export const verifyPresignedUrl = async (
 };
 
 export const isS3Request = (headers: Record<string, string>): boolean => {
-  const auth = headers['authorization'] || '';
+  const auth = headers.authorization || '';
   return auth.startsWith('AWS4-HMAC-SHA256');
 };

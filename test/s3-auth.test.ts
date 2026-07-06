@@ -1,4 +1,4 @@
-import { describe, expect, it, beforeAll } from 'bun:test';
+import { beforeAll, describe, expect, it } from 'bun:test';
 
 describe('S3 Auth (SigV4)', () => {
   let verifySignature: typeof import('../src/utils/s3/auth').verifySignature;
