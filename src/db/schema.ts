@@ -1,5 +1,5 @@
 import type { InferInsertModel, InferSelectModel } from 'drizzle-orm';
-import { bigint, pgTable, text, timestamp, uuid } from 'drizzle-orm/pg-core';
+import { bigint, boolean, pgTable, text, timestamp, uuid } from 'drizzle-orm/pg-core';
 
 export const files = pgTable('files', {
   id: uuid('id').primaryKey().defaultRandom(),
@@ -20,6 +20,11 @@ export const files = pgTable('files', {
   archiveEntryName: text('archive_entry_name'),
   archiveMimeType: text('archive_mime_type'),
   archiveSizeBytes: bigint('archive_size_bytes', { mode: 'number' }),
+  bucketId: text('bucket_id'),
+  s3Key: text('s3_key'),
+  storageBackend: text('storage_backend').default('telegram'),
+  isDeleted: boolean('is_deleted').default(false),
+  multipartUploadId: text('multipart_upload_id'),
   createdAt: timestamp('created_at').defaultNow().notNull(),
   updatedAt: timestamp('updated_at').defaultNow().notNull(),
 });

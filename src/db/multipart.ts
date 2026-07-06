@@ -1,0 +1,97 @@
+import { sql } from 'drizzle-orm';
+import { db } from './index';
+import { nanoid } from 'nanoid';
+
+export interface MultipartUpload {
+  uploadId: string;
+  bucketId: string;
+  s3Key: string;
+  initiatedAt: Date;
+  status: string;
+  initiatedBy: string;
+}
+
+export interface MultipartPart {
+  id: number;
+  uploadId: string;
+  partNumber: number;
+  telegramFileId: string;
+  telegramFileUniqueId: string;
+  storageMessageId: number;
+  sizeBytes: number;
+  etag: string;
+  createdAt: Date;
+}
+
+interface QueryResult {
+  rows: Record<string, unknown>[];
+  rowCount: number;
+}
+
+export const createMultipartUpload = async (
+  bucketId: string,
+  s3Key: string,
+  initiatedBy: string,
+): Promise<string> => {
+  const uploadId = nanoid(32);
+  await db.execute(
+    sql`INSERT INTO multipart_uploads (upload_id, bucket_id, s3_key, initiated_by) VALUES (${uploadId}, ${bucketId}, ${s3Key}, ${initiatedBy})`,
+  );
+  return uploadId;
+};
+
+export const findMultipartUpload = async (uploadId: string): Promise<MultipartUpload | null> => {
+  const result = (await db.execute(
+    sql`SELECT upload_id, bucket_id, s3_key, initiated_at, status FROM multipart_uploads WHERE upload_id = ${uploadId} AND status = 'in_progress'`,
+  )) as unknown as QueryResult;
+  if (result.rows.length === 0) return null;
+  const r = result.rows[0];
+  return {
+    uploadId: r.upload_id as string,
+    bucketId: r.bucket_id as string,
+    s3Key: r.s3_key as string,
+    initiatedAt: new Date(r.initiated_at as string),
+    status: r.status as string,
+    initiatedBy: '',
+  };
+};
+
+export const completeMultipartUpload = async (uploadId: string): Promise<void> => {
+  await db.execute(
+    sql`UPDATE multipart_uploads SET status = 'completed' WHERE upload_id = ${uploadId}`,
+  );
+};
+
+export const abortMultipartUpload = async (uploadId: string): Promise<void> => {
+  await db.execute(
+    sql`UPDATE multipart_uploads SET status = 'aborted' WHERE upload_id = ${uploadId}`,
+  );
+  // Parts are cascade-deleted by FK
+};
+
+export const insertMultipartPart = async (
+  part: Omit<MultipartPart, 'id' | 'createdAt'>,
+): Promise<void> => {
+  await db.execute(
+    sql`INSERT INTO multipart_parts (upload_id, part_number, telegram_file_id, telegram_file_unique_id, storage_message_id, size_bytes, etag)
+        VALUES (${part.uploadId}, ${part.partNumber}, ${part.telegramFileId}, ${part.telegramFileUniqueId}, ${part.storageMessageId}, ${part.sizeBytes}, ${part.etag})`,
+  );
+};
+
+export const listMultipartParts = async (uploadId: string): Promise<MultipartPart[]> => {
+  const result = (await db.execute(
+    sql`SELECT id, upload_id, part_number, telegram_file_id, telegram_file_unique_id, storage_message_id, size_bytes, etag, created_at
+        FROM multipart_parts WHERE upload_id = ${uploadId} ORDER BY part_number`,
+  )) as unknown as QueryResult;
+  return result.rows.map((r) => ({
+    id: r.id as number,
+    uploadId: r.upload_id as string,
+    partNumber: r.part_number as number,
+    telegramFileId: r.telegram_file_id as string,
+    telegramFileUniqueId: r.telegram_file_unique_id as string,
+    storageMessageId: r.storage_message_id as number,
+    sizeBytes: r.size_bytes as number,
+    etag: r.etag as string,
+    createdAt: new Date(r.created_at as string),
+  }));
+};
