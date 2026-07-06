@@ -291,10 +291,22 @@ describe('S3 SDK compatibility', () => {
       expect(uploadId).toBeTruthy();
 
       const part1 = await s3.send(
-        new UploadPartCommand({ Bucket: BUCKET, Key: 'sdk-multipart.txt', UploadId: uploadId, PartNumber: 1, Body: 'hello ' }),
+        new UploadPartCommand({
+          Bucket: BUCKET,
+          Key: 'sdk-multipart.txt',
+          UploadId: uploadId,
+          PartNumber: 1,
+          Body: 'hello ',
+        }),
       );
       const part2 = await s3.send(
-        new UploadPartCommand({ Bucket: BUCKET, Key: 'sdk-multipart.txt', UploadId: uploadId, PartNumber: 2, Body: 'sdk multipart' }),
+        new UploadPartCommand({
+          Bucket: BUCKET,
+          Key: 'sdk-multipart.txt',
+          UploadId: uploadId,
+          PartNumber: 2,
+          Body: 'sdk multipart',
+        }),
       );
 
       await s3.send(
@@ -312,13 +324,25 @@ describe('S3 SDK compatibility', () => {
       );
       uploadId = undefined;
 
-      const { Body } = await s3.send(new GetObjectCommand({ Bucket: BUCKET, Key: 'sdk-multipart.txt' }));
+      const { Body } = await s3.send(
+        new GetObjectCommand({ Bucket: BUCKET, Key: 'sdk-multipart.txt' }),
+      );
       expect(await Body!.transformToString()).toBe('hello sdk multipart');
     } finally {
       if (uploadId) {
-        await s3.send(new AbortMultipartUploadCommand({ Bucket: BUCKET, Key: 'sdk-multipart.txt', UploadId: uploadId })).catch(() => {});
+        await s3
+          .send(
+            new AbortMultipartUploadCommand({
+              Bucket: BUCKET,
+              Key: 'sdk-multipart.txt',
+              UploadId: uploadId,
+            }),
+          )
+          .catch(() => {});
       }
-      await s3.send(new DeleteObjectCommand({ Bucket: BUCKET, Key: 'sdk-multipart.txt' })).catch(() => {});
+      await s3
+        .send(new DeleteObjectCommand({ Bucket: BUCKET, Key: 'sdk-multipart.txt' }))
+        .catch(() => {});
     }
   });
 
