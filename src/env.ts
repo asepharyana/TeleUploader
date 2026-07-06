@@ -90,7 +90,7 @@ export const config: AppConfig = {
   s3DefaultRegion: process.env.S3_DEFAULT_REGION || 'us-east-1',
   proxyS3Get: process.env.PROXY_S3_GET !== 'false',
   s3VhostDomains: parseDomains(
-    process.env.S3_VHOST_DOMAINS || 'upload.asepharyana.my.id,upload.asepharyana.web.id',
+    process.env.S3_VHOST_DOMAINS || 'upload.asepharyana.my.id,asepharyana.web.id,upload.asepharyana.web.id',
   ),
 };
 
