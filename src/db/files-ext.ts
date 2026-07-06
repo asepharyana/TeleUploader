@@ -111,10 +111,7 @@ export const softDeleteFile = async (bucketId: string, s3Key: string): Promise<b
   return result.rows.length > 0;
 };
 
-export const softDeleteFilesBatch = async (
-  bucketId: string,
-  keys: string[],
-): Promise<number> => {
+export const softDeleteFilesBatch = async (bucketId: string, keys: string[]): Promise<number> => {
   let deleted = 0;
   for (const key of keys) {
     const ok = await softDeleteFile(bucketId, key);

@@ -16,10 +16,14 @@ export const listBucketsXml = (
 ): string => `<?xml version="1.0" encoding="UTF-8"?>
 <ListAllMyBucketsResult xmlns="http://s3.amazonaws.com/doc/2006-03-01/">
   <Buckets>
-    ${buckets.map((b) => `<Bucket>
+    ${buckets
+      .map(
+        (b) => `<Bucket>
       <Name>${escapeXml(b.name)}</Name>
       <CreationDate>${isoDate(b.createdAt)}</CreationDate>
-    </Bucket>`).join('')}
+    </Bucket>`,
+      )
+      .join('')}
   </Buckets>
 </ListAllMyBucketsResult>`;
 
@@ -44,16 +48,24 @@ export const listBucketResultXml = (
   <MaxKeys>${maxKeys}</MaxKeys>
   <Delimiter>${escapeXml(delimiter || '')}</Delimiter>
   <IsTruncated>${isTruncated}</IsTruncated>
-  ${objects.map((o) => `<Contents>
+  ${objects
+    .map(
+      (o) => `<Contents>
     <Key>${escapeXml(o.key)}</Key>
     <LastModified>${isoDate(o.lastModified)}</LastModified>
     <ETag>"${o.etag}"</ETag>
     <Size>${o.sizeBytes}</Size>
     <StorageClass>STANDARD</StorageClass>
-  </Contents>`).join('')}
-  ${prefixes.map((p) => `<CommonPrefixes>
+  </Contents>`,
+    )
+    .join('')}
+  ${prefixes
+    .map(
+      (p) => `<CommonPrefixes>
     <Prefix>${escapeXml(p)}</Prefix>
-  </CommonPrefixes>`).join('')}
+  </CommonPrefixes>`,
+    )
+    .join('')}
   ${nextMarker ? `<NextMarker>${escapeXml(nextMarker)}</NextMarker>` : ''}
 </ListBucketResult>`;
 
@@ -78,16 +90,24 @@ export const listBucketV2ResultXml = (
   ${delimiter ? `<Delimiter>${escapeXml(delimiter)}</Delimiter>` : ''}
   ${continuationToken ? `<ContinuationToken>${escapeXml(continuationToken)}</ContinuationToken>` : ''}
   <IsTruncated>${isTruncated}</IsTruncated>
-  ${objects.map((o) => `<Contents>
+  ${objects
+    .map(
+      (o) => `<Contents>
     <Key>${escapeXml(o.key)}</Key>
     <LastModified>${isoDate(o.lastModified)}</LastModified>
     <ETag>"${o.etag}"</ETag>
     <Size>${o.sizeBytes}</Size>
     <StorageClass>STANDARD</StorageClass>
-  </Contents>`).join('')}
-  ${prefixes.map((p) => `<CommonPrefixes>
+  </Contents>`,
+    )
+    .join('')}
+  ${prefixes
+    .map(
+      (p) => `<CommonPrefixes>
     <Prefix>${escapeXml(p)}</Prefix>
-  </CommonPrefixes>`).join('')}
+  </CommonPrefixes>`,
+    )
+    .join('')}
   ${nextContinuationToken ? `<NextContinuationToken>${escapeXml(nextContinuationToken)}</NextContinuationToken>` : ''}
 </ListBucketResultV2>`;
 
@@ -119,12 +139,16 @@ export const listPartsXml = (
   <UploadId>${uploadId}</UploadId>
   <MaxParts>${maxParts}</MaxParts>
   <IsTruncated>${isTruncated}</IsTruncated>
-  ${parts.map((p) => `<Part>
+  ${parts
+    .map(
+      (p) => `<Part>
     <PartNumber>${p.partNumber}</PartNumber>
     <LastModified>${isoDate(p.createdAt)}</LastModified>
     <ETag>"${p.etag}"</ETag>
     <Size>${p.sizeBytes}</Size>
-  </Part>`).join('')}
+  </Part>`,
+    )
+    .join('')}
 </ListPartsResult>`;
 
 export const completeMultipartUploadXml = (
@@ -147,14 +171,22 @@ export const deleteResultXml = (
   errors: { key: string; code: string; message: string }[],
 ): string => `<?xml version="1.0" encoding="UTF-8"?>
 <DeleteResult xmlns="http://s3.amazonaws.com/doc/2006-03-01/">
-  ${deleted.map((key) => `<Deleted>
+  ${deleted
+    .map(
+      (key) => `<Deleted>
     <Key>${escapeXml(key)}</Key>
-  </Deleted>`).join('')}
-  ${errors.map((e) => `<Error>
+  </Deleted>`,
+    )
+    .join('')}
+  ${errors
+    .map(
+      (e) => `<Error>
     <Key>${escapeXml(e.key)}</Key>
     <Code>${e.code}</Code>
     <Message>${escapeXml(e.message)}</Message>
-  </Error>`).join('')}
+  </Error>`,
+    )
+    .join('')}
 </DeleteResult>`;
 
 // ─────── Copy ───────

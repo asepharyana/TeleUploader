@@ -1,6 +1,9 @@
 import { createBucket, findBucketByName, listBuckets, deleteBucket } from '../db/buckets';
 import {
-  findFileByBucketAndKey, listObjectsByPrefix, softDeleteFile, countBucketObjects,
+  findFileByBucketAndKey,
+  listObjectsByPrefix,
+  softDeleteFile,
+  countBucketObjects,
 } from '../db/files-ext';
 import { createReadStream } from 'node:fs';
 import { config } from '../env';
@@ -11,11 +14,9 @@ import logger from '../utils/logger';
 
 type RouteParams = { bucket?: string; key?: string };
 
-const json = (data: unknown, status = 200) =>
-  Response.json(data, { status });
+const json = (data: unknown, status = 200) => Response.json(data, { status });
 
-const jsonError = (error: string, status: number) =>
-  Response.json({ error }, { status });
+const jsonError = (error: string, status: number) => Response.json({ error }, { status });
 
 // ─────── Bucket endpoints ───────
 
@@ -43,7 +44,10 @@ export const handleCreateBucketV1 = async (req: Request): Promise<Response> => {
   return json({ id: bucket.id, name: bucket.name }, 201);
 };
 
-export const handleDeleteBucketV1 = async (_req: Request, params: RouteParams): Promise<Response> => {
+export const handleDeleteBucketV1 = async (
+  _req: Request,
+  params: RouteParams,
+): Promise<Response> => {
   const bucket = await findBucketByName(params.bucket!);
   if (!bucket) return jsonError('Bucket not found', 404);
   const count = await countBucketObjects(bucket.id);
@@ -65,7 +69,11 @@ export const handleListObjectsV1 = async (req: Request, params: RouteParams): Pr
   const continuationToken = url.searchParams.get('continuation-token') || null;
 
   const { objects, prefixes } = await listObjectsByPrefix(
-    bucket.id, prefix, delimiter, maxKeys, continuationToken,
+    bucket.id,
+    prefix,
+    delimiter,
+    maxKeys,
+    continuationToken,
   );
   const isTruncated = objects.length > maxKeys;
   const displayObjects = objects.slice(0, maxKeys);
@@ -78,20 +86,22 @@ export const handleListObjectsV1 = async (req: Request, params: RouteParams): Pr
       sizeBytes: o.sizeBytes,
       fileType: o.fileType,
       etag: o.fileHash,
-      lastModified: o.createdAt instanceof Date
-        ? o.createdAt.toISOString()
-        : new Date(o.createdAt).toISOString(),
+      lastModified:
+        o.createdAt instanceof Date
+          ? o.createdAt.toISOString()
+          : new Date(o.createdAt).toISOString(),
       downloadUrl: `${config.baseUrl}/f/${o.publicId}`,
     })),
     prefixes,
     isTruncated,
-    nextContinuationToken: isTruncated
-      ? displayObjects[displayObjects.length - 1]?.s3Key
-      : null,
+    nextContinuationToken: isTruncated ? displayObjects[displayObjects.length - 1]?.s3Key : null,
   });
 };
 
-export const handleUploadObjectV1 = async (req: Request, params: RouteParams): Promise<Response> => {
+export const handleUploadObjectV1 = async (
+  req: Request,
+  params: RouteParams,
+): Promise<Response> => {
   const bucket = await findBucketByName(params.bucket!);
   if (!bucket) return jsonError('Bucket not found', 404);
 
@@ -147,17 +157,26 @@ export const handleUploadObjectV1 = async (req: Request, params: RouteParams): P
 
   await cleanupTempFile(tempPath);
 
-  return json({ key, size: buffer.byteLength, etag: hash, downloadUrl: `${config.baseUrl}/f/${publicId}` }, 201);
+  return json(
+    { key, size: buffer.byteLength, etag: hash, downloadUrl: `${config.baseUrl}/f/${publicId}` },
+    201,
+  );
 };
 
-export const handleDeleteObjectV1 = async (_req: Request, params: RouteParams): Promise<Response> => {
+export const handleDeleteObjectV1 = async (
+  _req: Request,
+  params: RouteParams,
+): Promise<Response> => {
   const bucket = await findBucketByName(params.bucket!);
   if (!bucket) return jsonError('Bucket not found', 404);
   await softDeleteFile(bucket.id, params.key!);
   return json({ success: true });
 };
 
-export const handleDownloadObjectV1 = async (_req: Request, params: RouteParams): Promise<Response> => {
+export const handleDownloadObjectV1 = async (
+  _req: Request,
+  params: RouteParams,
+): Promise<Response> => {
   const bucket = await findBucketByName(params.bucket!);
   if (!bucket) return jsonError('Bucket not found', 404);
 
@@ -241,12 +260,22 @@ export const handleWebApiV1 = async (req: Request): Promise<Response> => {
     }
 
     // GET /api/v1/buckets/{name}/objects
-    if (parts.length === 3 && parts[0] === 'buckets' && parts[2] === 'objects' && method === 'GET') {
+    if (
+      parts.length === 3 &&
+      parts[0] === 'buckets' &&
+      parts[2] === 'objects' &&
+      method === 'GET'
+    ) {
       return await handleListObjectsV1(req, { bucket: parts[1] });
     }
 
     // POST /api/v1/buckets/{name}/upload
-    if (parts.length === 3 && parts[0] === 'buckets' && parts[2] === 'upload' && method === 'POST') {
+    if (
+      parts.length === 3 &&
+      parts[0] === 'buckets' &&
+      parts[2] === 'upload' &&
+      method === 'POST'
+    ) {
       return await handleUploadObjectV1(req, { bucket: parts[1] });
     }
 
@@ -263,7 +292,12 @@ export const handleWebApiV1 = async (req: Request): Promise<Response> => {
     }
 
     // GET /api/v1/buckets/{name}/download/{key+}
-    if (parts.length >= 4 && parts[0] === 'buckets' && parts[2] === 'download' && method === 'GET') {
+    if (
+      parts.length >= 4 &&
+      parts[0] === 'buckets' &&
+      parts[2] === 'download' &&
+      method === 'GET'
+    ) {
       const bucket = parts[1];
       const key = parts.slice(3).join('/');
       return await handleDownloadObjectV1(req, { bucket, key });

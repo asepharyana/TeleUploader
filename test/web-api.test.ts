@@ -1,13 +1,20 @@
 import { afterAll, beforeAll, describe, expect, it, mock } from 'bun:test';
 
 const mockBuckets = [
-  { id: 'uuid-1', name: 'test-bucket', createdAt: new Date('2026-01-01'), updatedAt: new Date('2026-01-01') },
+  {
+    id: 'uuid-1',
+    name: 'test-bucket',
+    createdAt: new Date('2026-01-01'),
+    updatedAt: new Date('2026-01-01'),
+  },
 ];
 
 mock.module('../src/db/buckets', () => ({
   listBuckets: () => Promise.resolve(mockBuckets),
-  findBucketByName: (name: string) => Promise.resolve(mockBuckets.find((b) => b.name === name) || null),
-  createBucket: (name: string) => Promise.resolve({ id: 'new-uuid', name, createdAt: new Date(), updatedAt: new Date() }),
+  findBucketByName: (name: string) =>
+    Promise.resolve(mockBuckets.find((b) => b.name === name) || null),
+  createBucket: (name: string) =>
+    Promise.resolve({ id: 'new-uuid', name, createdAt: new Date(), updatedAt: new Date() }),
   deleteBucket: () => Promise.resolve(true),
   bucketExists: () => Promise.resolve(false),
 }));

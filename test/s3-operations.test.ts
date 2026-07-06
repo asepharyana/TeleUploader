@@ -17,7 +17,15 @@ describe('S3 XML Builders', () => {
     const xml = await import('../src/utils/s3/xml');
     const result = xml.listBucketResultXml(
       'my-bucket',
-      [{ key: 'folder/a&b.txt', sizeBytes: 100, etag: 'abc', lastModified: new Date('2026-01-01T00:00:00Z'), mimeType: 'text/plain' }],
+      [
+        {
+          key: 'folder/a&b.txt',
+          sizeBytes: 100,
+          etag: 'abc',
+          lastModified: new Date('2026-01-01T00:00:00Z'),
+          mimeType: 'text/plain',
+        },
+      ],
       ['photos/'],
       false,
       null,
@@ -37,7 +45,15 @@ describe('S3 XML Builders', () => {
     const xml = await import('../src/utils/s3/xml');
     const result = xml.listBucketV2ResultXml(
       'my-bucket',
-      [{ key: 'a.txt', sizeBytes: 50, etag: 'def', lastModified: new Date('2026-01-01T00:00:00Z'), mimeType: 'text/plain' }],
+      [
+        {
+          key: 'a.txt',
+          sizeBytes: 50,
+          etag: 'def',
+          lastModified: new Date('2026-01-01T00:00:00Z'),
+          mimeType: 'text/plain',
+        },
+      ],
       [],
       false,
       1000,
@@ -55,14 +71,25 @@ describe('S3 XML Builders', () => {
 
   it('builds multipart and copy XML responses', async () => {
     const xml = await import('../src/utils/s3/xml');
-    expect(xml.initiateMultipartUploadXml('bucket', 'key', 'upload-123')).toContain('<UploadId>upload-123</UploadId>');
-    expect(xml.completeMultipartUploadXml('bucket', 'key', 'etag-abc', 'http://localhost/bucket/key')).toContain('<CompleteMultipartUploadResult');
-    expect(xml.copyObjectResultXml('etag-abc', new Date('2026-01-01T00:00:00Z'))).toContain('<CopyObjectResult');
+    expect(xml.initiateMultipartUploadXml('bucket', 'key', 'upload-123')).toContain(
+      '<UploadId>upload-123</UploadId>',
+    );
+    expect(
+      xml.completeMultipartUploadXml('bucket', 'key', 'etag-abc', 'http://localhost/bucket/key'),
+    ).toContain('<CompleteMultipartUploadResult');
+    expect(xml.copyObjectResultXml('etag-abc', new Date('2026-01-01T00:00:00Z'))).toContain(
+      '<CopyObjectResult',
+    );
   });
 
   it('builds error XML and error Response', async () => {
     const xml = await import('../src/utils/s3/xml');
-    const result = xml.s3ErrorXml('NoSuchBucket', 'The specified bucket does not exist', '/bucket', 'req-1');
+    const result = xml.s3ErrorXml(
+      'NoSuchBucket',
+      'The specified bucket does not exist',
+      '/bucket',
+      'req-1',
+    );
     expect(result).toContain('<Code>NoSuchBucket</Code>');
     expect(result).toContain('<RequestId>req-1</RequestId>');
 
@@ -73,7 +100,8 @@ describe('S3 XML Builders', () => {
 
   it('parses DeleteObjects body', async () => {
     const xml = await import('../src/utils/s3/xml');
-    const body = '<Delete><Object><Key>file1.txt</Key></Object><Object><Key>file2.txt</Key></Object><Quiet>true</Quiet></Delete>';
+    const body =
+      '<Delete><Object><Key>file1.txt</Key></Object><Object><Key>file2.txt</Key></Object><Quiet>true</Quiet></Delete>';
     const { keys, quiet } = xml.parseDeleteObjectsBody(body);
     expect(keys).toEqual(['file1.txt', 'file2.txt']);
     expect(quiet).toBe(true);
@@ -81,7 +109,8 @@ describe('S3 XML Builders', () => {
 
   it('parses CompleteMultipartUpload body', async () => {
     const xml = await import('../src/utils/s3/xml');
-    const body = '<CompleteMultipartUpload><Part><PartNumber>1</PartNumber><ETag>"abc"</ETag></Part><Part><PartNumber>2</PartNumber><ETag>"def"</ETag></Part></CompleteMultipartUpload>';
+    const body =
+      '<CompleteMultipartUpload><Part><PartNumber>1</PartNumber><ETag>"abc"</ETag></Part><Part><PartNumber>2</PartNumber><ETag>"def"</ETag></Part></CompleteMultipartUpload>';
     const parts = xml.parseCompleteMultipartBody(body);
     expect(parts).toEqual([
       { partNumber: 1, etag: 'abc' },

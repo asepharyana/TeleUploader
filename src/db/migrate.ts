@@ -12,10 +12,10 @@ export const runMigration = async (): Promise<void> => {
   // In source via bun --hot: import.meta.dir = .../src/db/
   const dir = import.meta.dir || '';
   const candidates = [
-    dir + '/../../schema.sql',  // from dist/
-    dir + '/../schema.sql',     // from src/ (bun --hot src/index.ts)
-    dir + '/../schema.sql',     // from src/db/ (bun --hot src/db/migrate.ts)
-    dir + '/schema.sql',        // from src/ (bun run db:migrate)
+    dir + '/../../schema.sql', // from dist/
+    dir + '/../schema.sql', // from src/ (bun --hot src/index.ts)
+    dir + '/../schema.sql', // from src/db/ (bun --hot src/db/migrate.ts)
+    dir + '/schema.sql', // from src/ (bun run db:migrate)
   ];
 
   let schemaSql: string | null = null;

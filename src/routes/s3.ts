@@ -1,16 +1,31 @@
 import { verifySignature, verifyPresignedUrl } from '../utils/s3/auth';
 import {
-  listBucketsXml, s3ErrorResponse, listBucketResultXml, listBucketV2ResultXml,
-  initiateMultipartUploadXml, listPartsXml, completeMultipartUploadXml, deleteResultXml,
-  copyObjectResultXml, parseDeleteObjectsBody, parseCompleteMultipartBody,
+  listBucketsXml,
+  s3ErrorResponse,
+  listBucketResultXml,
+  listBucketV2ResultXml,
+  initiateMultipartUploadXml,
+  listPartsXml,
+  completeMultipartUploadXml,
+  deleteResultXml,
+  copyObjectResultXml,
+  parseDeleteObjectsBody,
+  parseCompleteMultipartBody,
 } from '../utils/s3/xml';
 import { createBucket, findBucketByName, listBuckets, deleteBucket } from '../db/buckets';
 import {
-  createMultipartUpload, findMultipartUpload, completeMultipartUpload, abortMultipartUpload,
-  insertMultipartPart, listMultipartParts,
+  createMultipartUpload,
+  findMultipartUpload,
+  completeMultipartUpload,
+  abortMultipartUpload,
+  insertMultipartPart,
+  listMultipartParts,
 } from '../db/multipart';
 import {
-  findFileByBucketAndKey, listObjectsByPrefix, softDeleteFile, countBucketObjects,
+  findFileByBucketAndKey,
+  listObjectsByPrefix,
+  softDeleteFile,
+  countBucketObjects,
 } from '../db/files-ext';
 import type { File } from '../db/schema';
 import { config } from '../env';
@@ -52,12 +67,32 @@ export const handleS3Request = async (req: Request): Promise<Response> => {
   // Presigned URLs: only supported for GET (verified in handleGetObject)
   if (searchParams.has('X-Amz-Signature')) {
     if (method !== 'GET') {
-      return s3ErrorResponse('AccessDenied', 'Presigned URLs only supported for GET', pathname, 403, reqId);
+      return s3ErrorResponse(
+        'AccessDenied',
+        'Presigned URLs only supported for GET',
+        pathname,
+        403,
+        reqId,
+      );
     }
   } else {
-    const authResult = await verifySignature(method, req.url, headers, null, config.s3AccessKey, config.s3SecretKey, REGION);
+    const authResult = await verifySignature(
+      method,
+      req.url,
+      headers,
+      null,
+      config.s3AccessKey,
+      config.s3SecretKey,
+      REGION,
+    );
     if (!authResult.isValid) {
-      return s3ErrorResponse(authResult.errorCode || 'AccessDenied', 'Authentication required', pathname, 403, reqId);
+      return s3ErrorResponse(
+        authResult.errorCode || 'AccessDenied',
+        'Authentication required',
+        pathname,
+        403,
+        reqId,
+      );
     }
   }
 
@@ -67,7 +102,13 @@ export const handleS3Request = async (req: Request): Promise<Response> => {
       if (method === 'GET') {
         return handleListBuckets(reqId);
       }
-      return s3ErrorResponse('MethodNotAllowed', 'The specified method is not allowed against this resource.', '/', 405, reqId);
+      return s3ErrorResponse(
+        'MethodNotAllowed',
+        'The specified method is not allowed against this resource.',
+        '/',
+        405,
+        reqId,
+      );
     }
 
     // Bucket-level operations
@@ -91,7 +132,13 @@ export const handleS3Request = async (req: Request): Promise<Response> => {
           return new Response(null, { status: 204 });
         }
       }
-      return s3ErrorResponse('MethodNotAllowed', 'The specified method is not allowed against this resource.', `/${bucket}`, 405, reqId);
+      return s3ErrorResponse(
+        'MethodNotAllowed',
+        'The specified method is not allowed against this resource.',
+        `/${bucket}`,
+        405,
+        reqId,
+      );
     }
 
     // Object-level: multipart checks
@@ -118,10 +165,22 @@ export const handleS3Request = async (req: Request): Promise<Response> => {
     if (method === 'PUT') return handlePutObject(bucket, key, searchParams, headers, req, reqId);
     if (method === 'DELETE') return handleDeleteObject(bucket, key, reqId);
 
-    return s3ErrorResponse('MethodNotAllowed', 'The specified method is not allowed against this resource.', `/${bucket}/${key}`, 405, reqId);
+    return s3ErrorResponse(
+      'MethodNotAllowed',
+      'The specified method is not allowed against this resource.',
+      `/${bucket}/${key}`,
+      405,
+      reqId,
+    );
   } catch (error: unknown) {
     logger.error('S3 operation error', { bucket, key, error: getErrorMessage(error) });
-    return s3ErrorResponse('InternalError', 'We encountered an internal error. Please try again.', pathname, 500, reqId);
+    return s3ErrorResponse(
+      'InternalError',
+      'We encountered an internal error. Please try again.',
+      pathname,
+      500,
+      reqId,
+    );
   }
 };
 
@@ -138,11 +197,23 @@ const handleListBuckets = async (reqId: string): Promise<Response> => {
 
 const handleCreateBucket = async (bucketName: string, reqId: string): Promise<Response> => {
   if (!/^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$/.test(bucketName)) {
-    return s3ErrorResponse('InvalidBucketName', 'The specified bucket is not valid.', `/${bucketName}`, 400, reqId);
+    return s3ErrorResponse(
+      'InvalidBucketName',
+      'The specified bucket is not valid.',
+      `/${bucketName}`,
+      400,
+      reqId,
+    );
   }
   const existing = await findBucketByName(bucketName);
   if (existing) {
-    return s3ErrorResponse('BucketAlreadyExists', 'The requested bucket name is not available.', `/${bucketName}`, 409, reqId);
+    return s3ErrorResponse(
+      'BucketAlreadyExists',
+      'The requested bucket name is not available.',
+      `/${bucketName}`,
+      409,
+      reqId,
+    );
   }
   await createBucket(bucketName);
   return new Response(null, { status: 200, headers: { 'x-amz-request-id': reqId } });
@@ -151,7 +222,13 @@ const handleCreateBucket = async (bucketName: string, reqId: string): Promise<Re
 const handleHeadBucket = async (bucketName: string, reqId: string): Promise<Response> => {
   const bucket = await findBucketByName(bucketName);
   if (!bucket) {
-    return s3ErrorResponse('NoSuchBucket', 'The specified bucket does not exist.', `/${bucketName}`, 404, reqId);
+    return s3ErrorResponse(
+      'NoSuchBucket',
+      'The specified bucket does not exist.',
+      `/${bucketName}`,
+      404,
+      reqId,
+    );
   }
   return new Response(null, { status: 200, headers: { 'x-amz-request-id': reqId } });
 };
@@ -159,11 +236,23 @@ const handleHeadBucket = async (bucketName: string, reqId: string): Promise<Resp
 const handleDeleteBucket = async (bucketName: string, reqId: string): Promise<Response> => {
   const bucket = await findBucketByName(bucketName);
   if (!bucket) {
-    return s3ErrorResponse('NoSuchBucket', 'The specified bucket does not exist.', `/${bucketName}`, 404, reqId);
+    return s3ErrorResponse(
+      'NoSuchBucket',
+      'The specified bucket does not exist.',
+      `/${bucketName}`,
+      404,
+      reqId,
+    );
   }
   const objCount = await countBucketObjects(bucket.id);
   if (objCount > 0) {
-    return s3ErrorResponse('BucketNotEmpty', 'The bucket you tried to delete is not empty.', `/${bucketName}`, 409, reqId);
+    return s3ErrorResponse(
+      'BucketNotEmpty',
+      'The bucket you tried to delete is not empty.',
+      `/${bucketName}`,
+      409,
+      reqId,
+    );
   }
   await deleteBucket(bucketName);
   return new Response(null, { status: 204, headers: { 'x-amz-request-id': reqId } });
@@ -171,20 +260,51 @@ const handleDeleteBucket = async (bucketName: string, reqId: string): Promise<Re
 
 // ─────── Object Operations ───────
 
-const handleGetObject = async (bucket: string, key: string, searchParams: URLSearchParams, reqId: string): Promise<Response> => {
+const handleGetObject = async (
+  bucket: string,
+  key: string,
+  searchParams: URLSearchParams,
+  reqId: string,
+): Promise<Response> => {
   if (searchParams.has('X-Amz-Signature')) {
     const fullUrl = `http://localhost/${bucket}/${key}?${searchParams.toString()}`;
-    const presignedResult = await verifyPresignedUrl(fullUrl, 'GET', config.s3AccessKey, config.s3SecretKey, REGION);
+    const presignedResult = await verifyPresignedUrl(
+      fullUrl,
+      'GET',
+      config.s3AccessKey,
+      config.s3SecretKey,
+      REGION,
+    );
     if (!presignedResult.isValid) {
-      return s3ErrorResponse('AccessDenied', 'Request has expired', `/${bucket}/${key}`, 403, reqId);
+      return s3ErrorResponse(
+        'AccessDenied',
+        'Request has expired',
+        `/${bucket}/${key}`,
+        403,
+        reqId,
+      );
     }
   }
 
   const bucketRecord = await findBucketByName(bucket);
-  if (!bucketRecord) return s3ErrorResponse('NoSuchBucket', 'The specified bucket does not exist.', `/${bucket}/${key}`, 404, reqId);
+  if (!bucketRecord)
+    return s3ErrorResponse(
+      'NoSuchBucket',
+      'The specified bucket does not exist.',
+      `/${bucket}/${key}`,
+      404,
+      reqId,
+    );
 
   const file = await findFileByBucketAndKey(bucketRecord.id, key);
-  if (!file) return s3ErrorResponse('NoSuchKey', 'The specified key does not exist.', `/${bucket}/${key}`, 404, reqId);
+  if (!file)
+    return s3ErrorResponse(
+      'NoSuchKey',
+      'The specified key does not exist.',
+      `/${bucket}/${key}`,
+      404,
+      reqId,
+    );
 
   if (file.multipartUploadId) {
     return handleGetMultipartObject(file, bucket, key, reqId);
@@ -202,12 +322,23 @@ const handleGetObject = async (bucket: string, key: string, searchParams: URLSea
   });
 };
 
-const handleGetMultipartObject = async (file: File, bucket: string, key: string, reqId: string): Promise<Response> => {
+const handleGetMultipartObject = async (
+  file: File,
+  bucket: string,
+  key: string,
+  reqId: string,
+): Promise<Response> => {
   const uploadId = file.multipartUploadId!;
   const parts = await listMultipartParts(uploadId);
 
   if (parts.length === 0) {
-    return s3ErrorResponse('InternalError', 'Multipart object has no parts.', `/${bucket}/${key}`, 500, reqId);
+    return s3ErrorResponse(
+      'InternalError',
+      'Multipart object has no parts.',
+      `/${bucket}/${key}`,
+      500,
+      reqId,
+    );
   }
 
   const fileInfo = await getFileInfo(parts[0].telegramFileId);
@@ -224,26 +355,55 @@ const handleGetMultipartObject = async (file: File, bucket: string, key: string,
 
 const handleHeadObject = async (bucket: string, key: string, reqId: string): Promise<Response> => {
   const bucketRecord = await findBucketByName(bucket);
-  if (!bucketRecord) return s3ErrorResponse('NoSuchBucket', 'The specified bucket does not exist.', `/${bucket}/${key}`, 404, reqId);
+  if (!bucketRecord)
+    return s3ErrorResponse(
+      'NoSuchBucket',
+      'The specified bucket does not exist.',
+      `/${bucket}/${key}`,
+      404,
+      reqId,
+    );
 
   const file = await findFileByBucketAndKey(bucketRecord.id, key);
-  if (!file) return s3ErrorResponse('NoSuchKey', 'The specified key does not exist.', `/${bucket}/${key}`, 404, reqId);
+  if (!file)
+    return s3ErrorResponse(
+      'NoSuchKey',
+      'The specified key does not exist.',
+      `/${bucket}/${key}`,
+      404,
+      reqId,
+    );
 
   return new Response(null, {
     status: 200,
     headers: {
       'content-type': file.mimeType,
       'content-length': String(file.sizeBytes),
-      'etag': `"${file.fileHash || nanoid(16)}"`,
-      'last-modified': file.createdAt instanceof Date ? file.createdAt.toUTCString() : new Date().toUTCString(),
+      etag: `"${file.fileHash || nanoid(16)}"`,
+      'last-modified':
+        file.createdAt instanceof Date ? file.createdAt.toUTCString() : new Date().toUTCString(),
       'x-amz-request-id': reqId,
     },
   });
 };
 
-const handlePutObject = async (bucket: string, key: string, searchParams: URLSearchParams, headers: Record<string, string>, req: Request, reqId: string): Promise<Response> => {
+const handlePutObject = async (
+  bucket: string,
+  key: string,
+  searchParams: URLSearchParams,
+  headers: Record<string, string>,
+  req: Request,
+  reqId: string,
+): Promise<Response> => {
   const bucketRecord = await findBucketByName(bucket);
-  if (!bucketRecord) return s3ErrorResponse('NoSuchBucket', 'The specified bucket does not exist.', `/${bucket}/${key}`, 404, reqId);
+  if (!bucketRecord)
+    return s3ErrorResponse(
+      'NoSuchBucket',
+      'The specified bucket does not exist.',
+      `/${bucket}/${key}`,
+      404,
+      reqId,
+    );
 
   if (searchParams.has('tagging')) {
     return new Response(null, { status: 204 });
@@ -262,19 +422,33 @@ const handlePutObject = async (bucket: string, key: string, searchParams: URLSea
 
   const existing = await findFileByBucketAndKey(bucketRecord.id, key);
   if (existing) {
-    return new Response(null, { status: 200, headers: { 'etag': `"${hash}"`, 'x-amz-request-id': reqId } });
+    return new Response(null, {
+      status: 200,
+      headers: { etag: `"${hash}"`, 'x-amz-request-id': reqId },
+    });
   }
 
   return await storeFileToTelegram(fileBuffer, hash, key, bucketRecord, contentType, reqId);
 };
 
-const storeFileToTelegram = async (buffer: Buffer, hash: string, key: string, bucketRecord: { id: string; name: string }, contentType: string, reqId: string): Promise<Response> => {
+const storeFileToTelegram = async (
+  buffer: Buffer,
+  hash: string,
+  key: string,
+  bucketRecord: { id: string; name: string },
+  contentType: string,
+  reqId: string,
+): Promise<Response> => {
   const tempPath = `/tmp/teleuploader-s3-${nanoid()}`;
   await Bun.write(tempPath, buffer);
 
   const signatureBuffer = buffer.subarray(0, 16);
   const fileName = key.split('/').pop() || 'file';
-  const { fileName: finalFileName, mimeType } = ensureExtension(fileName, signatureBuffer, contentType);
+  const { fileName: finalFileName, mimeType } = ensureExtension(
+    fileName,
+    signatureBuffer,
+    contentType,
+  );
 
   const forwardResult = await forwardToStorage(
     createReadStream(tempPath),
@@ -309,21 +483,41 @@ const storeFileToTelegram = async (buffer: Buffer, hash: string, key: string, bu
 
   return new Response(null, {
     status: 200,
-    headers: { 'etag': `"${hash}"`, 'x-amz-request-id': reqId },
+    headers: { etag: `"${hash}"`, 'x-amz-request-id': reqId },
   });
 };
 
-const handleCopyObject = async (_destBucket: string, destKey: string, copySource: string, destBucketId: string, reqId: string): Promise<Response> => {
+const handleCopyObject = async (
+  _destBucket: string,
+  destKey: string,
+  copySource: string,
+  destBucketId: string,
+  reqId: string,
+): Promise<Response> => {
   const sourcePath = copySource.startsWith('/') ? copySource.slice(1) : copySource;
   const parts = sourcePath.split('/');
   const sourceBucket = parts[0];
   const sourceKey = parts.slice(1).join('/');
 
   const sourceBucketRecord = await findBucketByName(sourceBucket);
-  if (!sourceBucketRecord) return s3ErrorResponse('NoSuchBucket', 'The specified bucket does not exist.', copySource, 404, reqId);
+  if (!sourceBucketRecord)
+    return s3ErrorResponse(
+      'NoSuchBucket',
+      'The specified bucket does not exist.',
+      copySource,
+      404,
+      reqId,
+    );
 
   const sourceFile = await findFileByBucketAndKey(sourceBucketRecord.id, sourceKey);
-  if (!sourceFile) return s3ErrorResponse('NoSuchKey', 'The specified key does not exist.', copySource, 404, reqId);
+  if (!sourceFile)
+    return s3ErrorResponse(
+      'NoSuchKey',
+      'The specified key does not exist.',
+      copySource,
+      404,
+      reqId,
+    );
 
   const publicId = nanoid();
   const { db, files: fileSchema } = await import('../db/index');
@@ -355,17 +549,39 @@ const handleCopyObject = async (_destBucket: string, destKey: string, copySource
   });
 };
 
-const handleDeleteObject = async (bucket: string, key: string, reqId: string): Promise<Response> => {
+const handleDeleteObject = async (
+  bucket: string,
+  key: string,
+  reqId: string,
+): Promise<Response> => {
   const bucketRecord = await findBucketByName(bucket);
-  if (!bucketRecord) return s3ErrorResponse('NoSuchBucket', 'The specified bucket does not exist.', `/${bucket}/${key}`, 404, reqId);
+  if (!bucketRecord)
+    return s3ErrorResponse(
+      'NoSuchBucket',
+      'The specified bucket does not exist.',
+      `/${bucket}/${key}`,
+      404,
+      reqId,
+    );
 
   await softDeleteFile(bucketRecord.id, key);
   return new Response(null, { status: 204, headers: { 'x-amz-request-id': reqId } });
 };
 
-const handleDeleteObjects = async (bucket: string, body: string, reqId: string): Promise<Response> => {
+const handleDeleteObjects = async (
+  bucket: string,
+  body: string,
+  reqId: string,
+): Promise<Response> => {
   const bucketRecord = await findBucketByName(bucket);
-  if (!bucketRecord) return s3ErrorResponse('NoSuchBucket', 'The specified bucket does not exist.', `/${bucket}`, 404, reqId);
+  if (!bucketRecord)
+    return s3ErrorResponse(
+      'NoSuchBucket',
+      'The specified bucket does not exist.',
+      `/${bucket}`,
+      404,
+      reqId,
+    );
 
   const { keys } = parseDeleteObjectsBody(body);
   const deletedKeys: string[] = [];
@@ -382,9 +598,20 @@ const handleDeleteObjects = async (bucket: string, body: string, reqId: string):
 
 // ─────── Object Listing ───────
 
-const handleListObjectsV1 = async (bucket: string, searchParams: URLSearchParams, reqId: string): Promise<Response> => {
+const handleListObjectsV1 = async (
+  bucket: string,
+  searchParams: URLSearchParams,
+  reqId: string,
+): Promise<Response> => {
   const bucketRecord = await findBucketByName(bucket);
-  if (!bucketRecord) return s3ErrorResponse('NoSuchBucket', 'The specified bucket does not exist.', `/${bucket}`, 404, reqId);
+  if (!bucketRecord)
+    return s3ErrorResponse(
+      'NoSuchBucket',
+      'The specified bucket does not exist.',
+      `/${bucket}`,
+      404,
+      reqId,
+    );
 
   const prefix = searchParams.get('prefix') || '';
   const delimiter = searchParams.get('delimiter') || null;
@@ -392,12 +619,18 @@ const handleListObjectsV1 = async (bucket: string, searchParams: URLSearchParams
   const marker = searchParams.get('marker') || null;
 
   const { objects, prefixes: commonPrefixes } = await listObjectsByPrefix(
-    bucketRecord.id, prefix, delimiter, maxKeys, marker,
+    bucketRecord.id,
+    prefix,
+    delimiter,
+    maxKeys,
+    marker,
   );
 
   const isTruncated = objects.length > maxKeys;
   const displayObjects = objects.slice(0, maxKeys);
-  const nextMarker = isTruncated ? (displayObjects[displayObjects.length - 1]?.s3Key ?? null) : null;
+  const nextMarker = isTruncated
+    ? (displayObjects[displayObjects.length - 1]?.s3Key ?? null)
+    : null;
 
   const xml = listBucketResultXml(
     bucket,
@@ -424,9 +657,20 @@ const handleListObjectsV1 = async (bucket: string, searchParams: URLSearchParams
   });
 };
 
-const handleListObjectsV2 = async (bucket: string, searchParams: URLSearchParams, reqId: string): Promise<Response> => {
+const handleListObjectsV2 = async (
+  bucket: string,
+  searchParams: URLSearchParams,
+  reqId: string,
+): Promise<Response> => {
   const bucketRecord = await findBucketByName(bucket);
-  if (!bucketRecord) return s3ErrorResponse('NoSuchBucket', 'The specified bucket does not exist.', `/${bucket}`, 404, reqId);
+  if (!bucketRecord)
+    return s3ErrorResponse(
+      'NoSuchBucket',
+      'The specified bucket does not exist.',
+      `/${bucket}`,
+      404,
+      reqId,
+    );
 
   const prefix = searchParams.get('prefix') || '';
   const delimiter = searchParams.get('delimiter') || null;
@@ -435,12 +679,18 @@ const handleListObjectsV2 = async (bucket: string, searchParams: URLSearchParams
   const startAfter = searchParams.get('start-after') || null;
 
   const { objects, prefixes: commonPrefixes } = await listObjectsByPrefix(
-    bucketRecord.id, prefix, delimiter, maxKeys, continuationToken || startAfter,
+    bucketRecord.id,
+    prefix,
+    delimiter,
+    maxKeys,
+    continuationToken || startAfter,
   );
 
   const isTruncated = objects.length > maxKeys;
   const displayObjects = objects.slice(0, maxKeys);
-  const nextContinuationToken = isTruncated ? (displayObjects[displayObjects.length - 1]?.s3Key ?? null) : null;
+  const nextContinuationToken = isTruncated
+    ? (displayObjects[displayObjects.length - 1]?.s3Key ?? null)
+    : null;
 
   const xml = listBucketV2ResultXml(
     bucket,
@@ -470,9 +720,21 @@ const handleListObjectsV2 = async (bucket: string, searchParams: URLSearchParams
 
 // ─────── Multipart Upload ───────
 
-const handleCreateMultipartUpload = async (bucket: string, key: string, _searchParams: URLSearchParams, reqId: string): Promise<Response> => {
+const handleCreateMultipartUpload = async (
+  bucket: string,
+  key: string,
+  _searchParams: URLSearchParams,
+  reqId: string,
+): Promise<Response> => {
   const bucketRecord = await findBucketByName(bucket);
-  if (!bucketRecord) return s3ErrorResponse('NoSuchBucket', 'The specified bucket does not exist.', `/${bucket}/${key}`, 404, reqId);
+  if (!bucketRecord)
+    return s3ErrorResponse(
+      'NoSuchBucket',
+      'The specified bucket does not exist.',
+      `/${bucket}/${key}`,
+      404,
+      reqId,
+    );
 
   const uploadId = await createMultipartUpload(bucketRecord.id, key, 's3');
 
@@ -483,13 +745,25 @@ const handleCreateMultipartUpload = async (bucket: string, key: string, _searchP
   });
 };
 
-const handleUploadPart = async (bucket: string, key: string, searchParams: URLSearchParams, req: Request, reqId: string): Promise<Response> => {
+const handleUploadPart = async (
+  bucket: string,
+  key: string,
+  searchParams: URLSearchParams,
+  req: Request,
+  reqId: string,
+): Promise<Response> => {
   const uploadId = searchParams.get('uploadId')!;
   const partNumber = parseInt(searchParams.get('partNumber')!, 10);
 
   const multipart = await findMultipartUpload(uploadId);
   if (!multipart || multipart.s3Key !== key) {
-    return s3ErrorResponse('NoSuchUpload', 'The specified upload does not exist.', `/${bucket}/${key}`, 404, reqId);
+    return s3ErrorResponse(
+      'NoSuchUpload',
+      'The specified upload does not exist.',
+      `/${bucket}/${key}`,
+      404,
+      reqId,
+    );
   }
 
   const body = await req.arrayBuffer();
@@ -519,22 +793,40 @@ const handleUploadPart = async (bucket: string, key: string, searchParams: URLSe
 
   return new Response(null, {
     status: 200,
-    headers: { 'etag': `"${etag}"`, 'x-amz-request-id': reqId },
+    headers: { etag: `"${etag}"`, 'x-amz-request-id': reqId },
   });
 };
 
-const handleCompleteMultipartUpload = async (bucket: string, key: string, searchParams: URLSearchParams, body: string, reqId: string): Promise<Response> => {
+const handleCompleteMultipartUpload = async (
+  bucket: string,
+  key: string,
+  searchParams: URLSearchParams,
+  body: string,
+  reqId: string,
+): Promise<Response> => {
   const uploadId = searchParams.get('uploadId')!;
   const multipart = await findMultipartUpload(uploadId);
   if (!multipart) {
-    return s3ErrorResponse('NoSuchUpload', 'The specified upload does not exist.', `/${bucket}/${key}`, 404, reqId);
+    return s3ErrorResponse(
+      'NoSuchUpload',
+      'The specified upload does not exist.',
+      `/${bucket}/${key}`,
+      404,
+      reqId,
+    );
   }
 
   const parts = parseCompleteMultipartBody(body);
   const storedParts = await listMultipartParts(uploadId);
 
   if (parts.length !== storedParts.length) {
-    return s3ErrorResponse('InvalidPart', 'One or more specified parts could not be found.', `/${bucket}/${key}`, 400, reqId);
+    return s3ErrorResponse(
+      'InvalidPart',
+      'One or more specified parts could not be found.',
+      `/${bucket}/${key}`,
+      400,
+      reqId,
+    );
   }
 
   const totalSize = storedParts.reduce((sum, p) => sum + p.sizeBytes, 0);
@@ -574,22 +866,44 @@ const handleCompleteMultipartUpload = async (bucket: string, key: string, search
   });
 };
 
-const handleAbortMultipartUpload = async (bucket: string, key: string, searchParams: URLSearchParams, reqId: string): Promise<Response> => {
+const handleAbortMultipartUpload = async (
+  bucket: string,
+  key: string,
+  searchParams: URLSearchParams,
+  reqId: string,
+): Promise<Response> => {
   const uploadId = searchParams.get('uploadId')!;
   const multipart = await findMultipartUpload(uploadId);
   if (!multipart) {
-    return s3ErrorResponse('NoSuchUpload', 'The specified upload does not exist.', `/${bucket}/${key}`, 404, reqId);
+    return s3ErrorResponse(
+      'NoSuchUpload',
+      'The specified upload does not exist.',
+      `/${bucket}/${key}`,
+      404,
+      reqId,
+    );
   }
 
   await abortMultipartUpload(uploadId);
   return new Response(null, { status: 204, headers: { 'x-amz-request-id': reqId } });
 };
 
-const handleListParts = async (bucket: string, key: string, searchParams: URLSearchParams, reqId: string): Promise<Response> => {
+const handleListParts = async (
+  bucket: string,
+  key: string,
+  searchParams: URLSearchParams,
+  reqId: string,
+): Promise<Response> => {
   const uploadId = searchParams.get('uploadId')!;
   const multipart = await findMultipartUpload(uploadId);
   if (!multipart) {
-    return s3ErrorResponse('NoSuchUpload', 'The specified upload does not exist.', `/${bucket}/${key}`, 404, reqId);
+    return s3ErrorResponse(
+      'NoSuchUpload',
+      'The specified upload does not exist.',
+      `/${bucket}/${key}`,
+      404,
+      reqId,
+    );
   }
 
   const parts = await listMultipartParts(uploadId);

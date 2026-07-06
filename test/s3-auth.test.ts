@@ -19,35 +19,67 @@ describe('S3 Auth (SigV4)', () => {
   });
 
   it('rejects missing Authorization header', async () => {
-    const result = await verifySignature('GET', 'http://localhost/', {}, null, 'key', 'secret', 'us-east-1');
+    const result = await verifySignature(
+      'GET',
+      'http://localhost/',
+      {},
+      null,
+      'key',
+      'secret',
+      'us-east-1',
+    );
     expect(result.isValid).toBe(false);
     expect(result.errorCode).toBe('AccessDenied');
   });
 
   it('rejects wrong access key before signature calculation succeeds', async () => {
     const headers = {
-      authorization: 'AWS4-HMAC-SHA256 Credential=wrongkey/20260706/us-east-1/s3/aws4_request, SignedHeaders=host, Signature=abc123',
+      authorization:
+        'AWS4-HMAC-SHA256 Credential=wrongkey/20260706/us-east-1/s3/aws4_request, SignedHeaders=host, Signature=abc123',
       'x-amz-date': '20260706T120000Z',
       host: 'localhost',
     };
-    const result = await verifySignature('GET', 'http://localhost/', headers, null, 'correctkey', 'secret', 'us-east-1');
+    const result = await verifySignature(
+      'GET',
+      'http://localhost/',
+      headers,
+      null,
+      'correctkey',
+      'secret',
+      'us-east-1',
+    );
     expect(result.isValid).toBe(false);
     expect(result.errorCode).toBe('SignatureDoesNotMatch');
   });
 
   it('rejects region mismatch in Authorization credential scope', async () => {
     const headers = {
-      authorization: 'AWS4-HMAC-SHA256 Credential=testkey/20260706/eu-west-1/s3/aws4_request, SignedHeaders=host;x-amz-date, Signature=abc123',
+      authorization:
+        'AWS4-HMAC-SHA256 Credential=testkey/20260706/eu-west-1/s3/aws4_request, SignedHeaders=host;x-amz-date, Signature=abc123',
       'x-amz-date': '20260706T120000Z',
       host: 'localhost',
     };
-    const result = await verifySignature('GET', 'http://localhost/', headers, null, 'testkey', 'secret', 'us-east-1');
+    const result = await verifySignature(
+      'GET',
+      'http://localhost/',
+      headers,
+      null,
+      'testkey',
+      'secret',
+      'us-east-1',
+    );
     expect(result.isValid).toBe(false);
     expect(result.errorCode).toBe('SignatureDoesNotMatch');
   });
 
   it('rejects malformed presigned URLs', async () => {
-    const result = await verifyPresignedUrl('http://localhost/bucket/key', 'GET', 'key', 'secret', 'us-east-1');
+    const result = await verifyPresignedUrl(
+      'http://localhost/bucket/key',
+      'GET',
+      'key',
+      'secret',
+      'us-east-1',
+    );
     expect(result.isValid).toBe(false);
     expect(result.errorCode).toBe('AccessDenied');
   });
