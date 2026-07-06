@@ -160,7 +160,8 @@ export const handleS3Request = async (req: Request): Promise<Response> => {
     }
 
     // Standard object operations
-    if (method === 'GET') return handleGetObject(bucket, key, searchParams, reqId);
+    if (method === 'GET')
+      return handleGetObject(bucket, key, searchParams, headers, req.url, reqId);
     if (method === 'HEAD') return handleHeadObject(bucket, key, reqId);
     if (method === 'PUT') return handlePutObject(bucket, key, searchParams, headers, req, reqId);
     if (method === 'DELETE') return handleDeleteObject(bucket, key, reqId);
@@ -264,21 +265,23 @@ const handleGetObject = async (
   bucket: string,
   key: string,
   searchParams: URLSearchParams,
+  headers: Record<string, string>,
+  requestUrl: string,
   reqId: string,
 ): Promise<Response> => {
   if (searchParams.has('X-Amz-Signature')) {
-    const fullUrl = `http://localhost/${bucket}/${key}?${searchParams.toString()}`;
-    const presignedResult = await verifyPresignedUrl(
-      fullUrl,
-      'GET',
-      config.s3AccessKey,
-      config.s3SecretKey,
-      REGION,
-    );
+    const presignedResult = await verifyPresignedUrl({
+      url: requestUrl,
+      method: 'GET',
+      headers,
+      s3AccessKey: config.s3AccessKey,
+      s3SecretKey: config.s3SecretKey,
+      region: REGION,
+    });
     if (!presignedResult.isValid) {
       return s3ErrorResponse(
-        'AccessDenied',
-        'Request has expired',
+        presignedResult.errorCode || 'AccessDenied',
+        'Presigned URL verification failed',
         `/${bucket}/${key}`,
         403,
         reqId,

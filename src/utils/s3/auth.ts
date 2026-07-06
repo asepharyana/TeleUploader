@@ -9,6 +9,16 @@ export interface SigV4Result {
   errorCode?: string;
 }
 
+export interface VerifyPresignedUrlInput {
+  url: string;
+  method: string;
+  headers: Record<string, string>;
+  s3AccessKey: string;
+  s3SecretKey: string;
+  region: string;
+  now?: Date;
+}
+
 const SERVICE = 's3';
 const TERMINATION = 'aws4_request';
 
@@ -101,16 +111,26 @@ const normalizeUri = (uri: string): string => {
   return decodeURIComponent(uri);
 };
 
-const buildCanonicalQueryString = (searchParams: URLSearchParams): string => {
-  const params: string[] = [];
-  const keys = Array.from(searchParams.keys()).sort();
-  for (const key of keys) {
-    const values = searchParams.getAll(key).sort();
-    for (const value of values) {
-      params.push(`${encodeURIComponent(key)}=${encodeURIComponent(value)}`);
-    }
+const awsEncode = (value: string): string =>
+  encodeURIComponent(value).replace(
+    /[!'()*]/g,
+    (ch) => `%${ch.charCodeAt(0).toString(16).toUpperCase()}`,
+  );
+
+export const buildCanonicalQueryString = (
+  searchParams: URLSearchParams,
+  excludeKeys: Set<string> = new Set(),
+): string => {
+  const pairs: Array<[string, string]> = [];
+  for (const [key, value] of searchParams.entries()) {
+    if (!excludeKeys.has(key)) pairs.push([key, value]);
   }
-  return params.join('&');
+  pairs.sort(([ak, av], [bk, bv]) => {
+    const a = `${awsEncode(ak)}=${awsEncode(av)}`;
+    const b = `${awsEncode(bk)}=${awsEncode(bv)}`;
+    return a.localeCompare(b);
+  });
+  return pairs.map(([key, value]) => `${awsEncode(key)}=${awsEncode(value)}`).join('&');
 };
 
 const getHashedPayload = async (
@@ -191,88 +211,97 @@ export const verifySignature = async (
   };
 };
 
-export const verifyPresignedUrl = async (
-  url: string,
-  method: string,
-  s3AccessKey: string,
-  s3SecretKey: string,
-  region: string,
-): Promise<SigV4Result> => {
-  const parsedUrl = new URL(url);
-  const queryParams = Object.fromEntries(parsedUrl.searchParams.entries());
+const parseAmzDateUtc = (amzDate: string): Date | null => {
+  const match = amzDate.match(/^(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})(\d{2})Z$/);
+  if (!match) return null;
+  const [, year, month, day, hour, minute, second] = match;
+  return new Date(
+    Date.UTC(
+      Number.parseInt(year, 10),
+      Number.parseInt(month, 10) - 1,
+      Number.parseInt(day, 10),
+      Number.parseInt(hour, 10),
+      Number.parseInt(minute, 10),
+      Number.parseInt(second, 10),
+    ),
+  );
+};
 
-  const algorithm = queryParams['X-Amz-Algorithm'];
-  const credential = queryParams['X-Amz-Credential'];
-  const signedHeaders = queryParams['X-Amz-SignedHeaders'];
-  const signature = queryParams['X-Amz-Signature'];
-  const expires = parseInt(queryParams['X-Amz-Expires'] || '0', 10);
-  const amzDate = queryParams['X-Amz-Date'];
+export const verifyPresignedUrl = async ({
+  url,
+  method,
+  headers,
+  s3AccessKey,
+  s3SecretKey,
+  region,
+  now = new Date(),
+}: VerifyPresignedUrlInput): Promise<SigV4Result> => {
+  const parsedUrl = new URL(url);
+  const searchParams = parsedUrl.searchParams;
+
+  const algorithm = searchParams.get('X-Amz-Algorithm');
+  const credential = searchParams.get('X-Amz-Credential');
+  const signedHeaders = searchParams.get('X-Amz-SignedHeaders');
+  const signature = searchParams.get('X-Amz-Signature');
+  const expiresText = searchParams.get('X-Amz-Expires');
+  const amzDate = searchParams.get('X-Amz-Date');
 
   if (
-    !algorithm ||
     algorithm !== 'AWS4-HMAC-SHA256' ||
     !credential ||
+    !signedHeaders ||
     !signature ||
-    !expires ||
+    !expiresText ||
     !amzDate
   ) {
     return { isValid: false, credential: null, errorCode: 'AccessDenied' };
   }
 
-  // Check expiration
-  const dateObj = new Date(
-    parseInt(amzDate.substring(0, 4), 10),
-    parseInt(amzDate.substring(4, 6), 10) - 1,
-    parseInt(amzDate.substring(6, 8), 10),
-    parseInt(amzDate.substring(9, 11), 10),
-    parseInt(amzDate.substring(11, 13), 10),
-    parseInt(amzDate.substring(13, 15), 10),
-  );
-  const expiresMs = expires * 1000;
-  if (Date.now() > dateObj.getTime() + expiresMs) {
+  const expires = Number.parseInt(expiresText, 10);
+  const signedAt = parseAmzDateUtc(amzDate);
+  if (!Number.isFinite(expires) || expires <= 0 || !signedAt) {
+    return { isValid: false, credential: null, errorCode: 'AccessDenied' };
+  }
+  if (now.getTime() > signedAt.getTime() + expires * 1000) {
     return { isValid: false, credential: null, errorCode: 'AccessDenied' };
   }
 
   const credParts = credential.split('/');
-  const presignedAccessKey = credParts[0];
-  if (presignedAccessKey !== s3AccessKey) {
+  if (credParts.length !== 5) {
+    return { isValid: false, credential: null, errorCode: 'AccessDenied' };
+  }
+  const [accessKey, dateStamp, credentialRegion, service, termination] = credParts;
+  if (
+    accessKey !== s3AccessKey ||
+    credentialRegion !== region ||
+    service !== SERVICE ||
+    termination !== TERMINATION
+  ) {
     return { isValid: false, credential: null, errorCode: 'SignatureDoesNotMatch' };
   }
-  const dateStamp = credParts[1] || amzDate.substring(0, 8);
 
-  const canonicalUri = normalizeUri(parsedUrl.pathname);
-
-  const sortedParams = new URLSearchParams();
-  const paramKeys = Object.keys(queryParams).sort();
-  for (const key of paramKeys) {
-    if (key !== 'X-Amz-Signature') {
-      sortedParams.append(key, queryParams[key]);
-    }
-  }
-  const canonicalQueryString = buildCanonicalQueryString(sortedParams);
-
-  // Build canonical headers for presigned URL — only 'host' is typically signed
   const signedHeaderList = signedHeaders.split(';').filter(Boolean);
   const canonicalHeaders = signedHeaderList
-    .map((h) => `${h.toLowerCase()}:${h === 'host' ? parsedUrl.host : ''}\n`)
+    .map((headerName) => {
+      const lower = headerName.toLowerCase();
+      const value = lower === 'host' ? headers.host || parsedUrl.host : headers[lower] || '';
+      return `${lower}:${value.trim()}\n`;
+    })
     .join('');
 
-  const hashedPayload = 'UNSIGNED-PAYLOAD';
-
-  const canonicalRequest = `${method}\n${canonicalUri}\n${canonicalQueryString}\n${canonicalHeaders}\n${signedHeaders}\n${hashedPayload}`;
+  const canonicalRequest = `${method}\n${normalizeUri(parsedUrl.pathname)}\n${buildCanonicalQueryString(searchParams, new Set(['X-Amz-Signature']))}\n${canonicalHeaders}\n${signedHeaders}\nUNSIGNED-PAYLOAD`;
   const hashedCanonicalRequest = await sha256Hex(canonicalRequest);
-
-  const credentialScope = `${dateStamp}/${region}/s3/aws4_request`;
+  const credentialScope = `${dateStamp}/${region}/${SERVICE}/${TERMINATION}`;
   const stringToSign = `AWS4-HMAC-SHA256\n${amzDate}\n${credentialScope}\n${hashedCanonicalRequest}`;
-
-  const signingKey = await getSigningKey(s3SecretKey, dateStamp, region);
-  const expectedSignature = await hmacHex(signingKey, stringToSign);
+  const expectedSignature = await hmacHex(
+    await getSigningKey(s3SecretKey, dateStamp, region),
+    stringToSign,
+  );
 
   if (expectedSignature !== signature) {
     return { isValid: false, credential: null, errorCode: 'SignatureDoesNotMatch' };
   }
-
-  return { isValid: true, credential: null };
+  return { isValid: true, credential: { accessKey, date: dateStamp, region, service } };
 };
 
 export const isS3Request = (headers: Record<string, string>): boolean => {
