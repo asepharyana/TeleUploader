@@ -1,5 +1,5 @@
 export const handleHome = async (): Promise<Response> => {
-  const html = await Bun.file('src/home.html').text();
+  const html = await Bun.file(import.meta.dir + '/../home.html').text();
   return new Response(html, {
     status: 200,
     headers: {

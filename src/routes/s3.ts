@@ -10,7 +10,7 @@ import {
   insertMultipartPart, listMultipartParts,
 } from '../db/multipart';
 import {
-  findFileByBucketAndKey, listObjectsByPrefix, softDeleteFile, softDeleteFilesBatch, countBucketObjects,
+  findFileByBucketAndKey, listObjectsByPrefix, softDeleteFile, countBucketObjects,
 } from '../db/files-ext';
 import type { File } from '../db/schema';
 import { config } from '../env';
@@ -49,8 +49,12 @@ export const handleS3Request = async (req: Request): Promise<Response> => {
   const searchParams = url.searchParams;
   const reqId = REQUEST_ID();
 
-  // Verify auth for regular requests; presigned URLs are verified per-operation
-  if (!searchParams.has('X-Amz-Signature')) {
+  // Presigned URLs: only supported for GET (verified in handleGetObject)
+  if (searchParams.has('X-Amz-Signature')) {
+    if (method !== 'GET') {
+      return s3ErrorResponse('AccessDenied', 'Presigned URLs only supported for GET', pathname, 403, reqId);
+    }
+  } else {
     const authResult = await verifySignature(method, req.url, headers, null, config.s3AccessKey, config.s3SecretKey, REGION);
     if (!authResult.isValid) {
       return s3ErrorResponse(authResult.errorCode || 'AccessDenied', 'Authentication required', pathname, 403, reqId);
@@ -250,41 +254,27 @@ const handlePutObject = async (bucket: string, key: string, searchParams: URLSea
     return handleCopyObject(bucket, key, copySource, bucketRecord.id, reqId);
   }
 
-  const formData = await req.formData();
-  const fileField = formData.get('file');
-  const file = fileField instanceof File ? fileField : null;
-
-  if (!file) {
-    // Direct body upload
-    const body = await req.arrayBuffer();
-    const fileBuffer = Buffer.from(body);
-    const hash = computeHash(fileBuffer);
-    const existing = await findFileByBucketAndKey(bucketRecord.id, key);
-    if (existing) {
-      return new Response(null, { status: 200, headers: { 'etag': `"${hash}"`, 'x-amz-request-id': reqId } });
-    }
-
-    return await storeFileToTelegram(fileBuffer, hash, key, bucketRecord, reqId);
-  }
-
-  const buffer = Buffer.from(await file.arrayBuffer());
-  const hash = computeHash(buffer);
+  // Read raw body — S3 clients send raw binary, not multipart/form-data
+  const body = await req.arrayBuffer();
+  const fileBuffer = Buffer.from(body);
+  const contentType = headers['content-type'] || 'application/octet-stream';
+  const hash = computeHash(fileBuffer);
 
   const existing = await findFileByBucketAndKey(bucketRecord.id, key);
   if (existing) {
     return new Response(null, { status: 200, headers: { 'etag': `"${hash}"`, 'x-amz-request-id': reqId } });
   }
 
-  return await storeFileToTelegram(buffer, hash, key, bucketRecord, reqId);
+  return await storeFileToTelegram(fileBuffer, hash, key, bucketRecord, contentType, reqId);
 };
 
-const storeFileToTelegram = async (buffer: Buffer, hash: string, key: string, bucketRecord: { id: string; name: string }, reqId: string): Promise<Response> => {
+const storeFileToTelegram = async (buffer: Buffer, hash: string, key: string, bucketRecord: { id: string; name: string }, contentType: string, reqId: string): Promise<Response> => {
   const tempPath = `/tmp/teleuploader-s3-${nanoid()}`;
   await Bun.write(tempPath, buffer);
 
   const signatureBuffer = buffer.subarray(0, 16);
   const fileName = key.split('/').pop() || 'file';
-  const { fileName: finalFileName, mimeType } = ensureExtension(fileName, signatureBuffer, 'application/octet-stream');
+  const { fileName: finalFileName, mimeType } = ensureExtension(fileName, signatureBuffer, contentType);
 
   const forwardResult = await forwardToStorage(
     createReadStream(tempPath),
@@ -378,8 +368,12 @@ const handleDeleteObjects = async (bucket: string, body: string, reqId: string):
   if (!bucketRecord) return s3ErrorResponse('NoSuchBucket', 'The specified bucket does not exist.', `/${bucket}`, 404, reqId);
 
   const { keys } = parseDeleteObjectsBody(body);
-  const deleted = await softDeleteFilesBatch(bucketRecord.id, keys);
-  const xml = deleteResultXml(keys.slice(0, deleted), []);
+  const deletedKeys: string[] = [];
+  for (const key of keys) {
+    const ok = await softDeleteFile(bucketRecord.id, key);
+    if (ok) deletedKeys.push(key);
+  }
+  const xml = deleteResultXml(deletedKeys, []);
   return new Response(xml, {
     status: 200,
     headers: { 'content-type': 'application/xml', 'x-amz-request-id': reqId },
