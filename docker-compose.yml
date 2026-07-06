@@ -22,6 +22,7 @@ services:
       - S3_ACCESS_KEY=${S3_ACCESS_KEY:-teleuploader-admin}
       - S3_SECRET_KEY=${S3_SECRET_KEY}
       - S3_DEFAULT_REGION=${S3_DEFAULT_REGION:-us-east-1}
+      - S3_VHOST_DOMAINS=${S3_VHOST_DOMAINS:-upload.asepharyana.my.id,asepharyana.web.id}
     security_opt:
       - no-new-privileges:true
     read_only: true
