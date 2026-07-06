@@ -188,10 +188,14 @@ export const s3ErrorResponse = (
   message: string,
   resource: string,
   status: number,
+  requestId: string = '',
 ): Response =>
-  new Response(s3ErrorXml(code, message, resource, ''), {
+  new Response(s3ErrorXml(code, message, resource, requestId), {
     status,
-    headers: { 'content-type': 'application/xml' },
+    headers: {
+      'content-type': 'application/xml',
+      ...(requestId ? { 'x-amz-request-id': requestId } : {}),
+    },
   });
 
 // ─────── DeleteObjects XML parser ───────

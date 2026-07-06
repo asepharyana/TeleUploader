@@ -97,7 +97,8 @@ const buildCanonicalRequest = (
 
 const normalizeUri = (uri: string): string => {
   if (!uri || uri === '') return '/';
-  return uri;
+  // AWS SigV4 requires URI-decoded paths in the canonical request
+  return decodeURIComponent(uri);
 };
 
 const buildCanonicalQueryString = (searchParams: URLSearchParams): string => {
@@ -144,6 +145,10 @@ export const verifySignature = async (
     return { isValid: false, credential: null, errorCode: 'SignatureDoesNotMatch' };
   }
 
+  if (parsed.region !== region) {
+    return { isValid: false, credential: null, errorCode: 'SignatureDoesNotMatch' };
+  }
+
   const parsedUrl = new URL(url, 'http://localhost');
   const canonicalUri = normalizeUri(parsedUrl.pathname);
   const canonicalQueryString = buildCanonicalQueryString(parsedUrl.searchParams);
@@ -164,7 +169,7 @@ export const verifySignature = async (
 
   const amzDate = headers['x-amz-date'] || '';
   const dateStamp = parsed.date;
-  const credentialScope = `${dateStamp}/${parsed.region}/${parsed.service}/${parsed.termination}`;
+  const credentialScope = `${dateStamp}/${region}/${parsed.service}/${parsed.termination}`;
 
   const stringToSign = `AWS4-HMAC-SHA256\n${amzDate}\n${credentialScope}\n${hashedCanonicalRequest}`;
 
@@ -188,6 +193,7 @@ export const verifySignature = async (
 
 export const verifyPresignedUrl = async (
   url: string,
+  method: string,
   s3AccessKey: string,
   s3SecretKey: string,
   region: string,
@@ -245,14 +251,15 @@ export const verifyPresignedUrl = async (
   }
   const canonicalQueryString = buildCanonicalQueryString(sortedParams);
 
-  const canonicalHeaders = signedHeaders
-    .split(';')
-    .map((h) => `${h}:host\n`)
+  // Build canonical headers for presigned URL — only 'host' is typically signed
+  const signedHeaderList = signedHeaders.split(';').filter(Boolean);
+  const canonicalHeaders = signedHeaderList
+    .map((h) => `${h.toLowerCase()}:${h === 'host' ? parsedUrl.host : ''}\n`)
     .join('');
-  const signedHeadersStr = signedHeaders;
+
   const hashedPayload = 'UNSIGNED-PAYLOAD';
 
-  const canonicalRequest = `${canonicalUri}\n${canonicalQueryString}\n${canonicalHeaders}\n${signedHeadersStr}\n${hashedPayload}`;
+  const canonicalRequest = `${method}\n${canonicalUri}\n${canonicalQueryString}\n${canonicalHeaders}\n${signedHeaders}\n${hashedPayload}`;
   const hashedCanonicalRequest = await sha256Hex(canonicalRequest);
 
   const credentialScope = `${dateStamp}/${region}/s3/aws4_request`;
