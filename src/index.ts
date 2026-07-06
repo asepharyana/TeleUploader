@@ -14,6 +14,22 @@ import logger from './utils/logger';
 import { metricsCollector } from './utils/metrics';
 import { cleanupRateLimitCache, withRateLimit } from './utils/rateLimit';
 
+// ─── Auto-run migration at startup ──────────────────────────────────────────
+try {
+  const { runMigration } = await import('./db/migrate');
+  await runMigration();
+} catch {
+  logger.warn('Auto-migration skipped (non-fatal)');
+}
+
+// ─── Auto-run migration at startup ───
+try {
+  await import('./db/migrate');
+} catch {
+  // migrate.ts calls process.exit(1) on failure — if it throws, log and continue
+  logger.warn('Auto-migration warning (non-fatal)');
+}
+
 const server = serve({
   port: config.port,
   routes: {
