@@ -55,6 +55,8 @@ const mapDbRowToS3Record = (row: Record<string, unknown>): S3FileRecord => {
   };
 };
 
+const escapeLike = (s: string): string => s.replace(/[%_\\]/g, '\\$&');
+
 export const listObjectsByPrefix = async (
   bucketId: string,
   prefix: string,
@@ -63,7 +65,7 @@ export const listObjectsByPrefix = async (
   startAfter: string | null,
 ): Promise<{ objects: S3FileRecord[]; prefixes: string[] }> => {
   let query = prefix
-    ? sql`SELECT * FROM files WHERE bucket_id = ${bucketId}::uuid AND is_deleted = false AND s3_key >= ${prefix} AND s3_key < ${`${prefix}￿`}`
+    ? sql`SELECT * FROM files WHERE bucket_id = ${bucketId}::uuid AND is_deleted = false AND s3_key LIKE ${`${escapeLike(prefix)}%`}`
     : sql`SELECT * FROM files WHERE bucket_id = ${bucketId}::uuid AND is_deleted = false`;
 
   if (startAfter) {
