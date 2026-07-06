@@ -23,11 +23,6 @@ export interface MultipartPart {
   createdAt: Date;
 }
 
-interface QueryResult {
-  rows: Record<string, unknown>[];
-  rowCount: number;
-}
-
 export const createMultipartUpload = async (
   bucketId: string,
   s3Key: string,
@@ -43,9 +38,9 @@ export const createMultipartUpload = async (
 export const findMultipartUpload = async (uploadId: string): Promise<MultipartUpload | null> => {
   const result = (await db.execute(
     sql`SELECT upload_id, bucket_id, s3_key, initiated_at, status FROM multipart_uploads WHERE upload_id = ${uploadId} AND status = 'in_progress'`,
-  )) as unknown as QueryResult;
-  if (result.rows.length === 0) return null;
-  const r = result.rows[0];
+  )) as unknown as Record<string, unknown>[];
+  if (result.length === 0) return null;
+  const r = result[0]!;
   return {
     uploadId: r.upload_id as string,
     bucketId: r.bucket_id as string,
@@ -82,8 +77,8 @@ export const listMultipartParts = async (uploadId: string): Promise<MultipartPar
   const result = (await db.execute(
     sql`SELECT id, upload_id, part_number, telegram_file_id, telegram_file_unique_id, storage_message_id, size_bytes, etag, created_at
         FROM multipart_parts WHERE upload_id = ${uploadId} ORDER BY part_number`,
-  )) as unknown as QueryResult;
-  return result.rows.map((r) => ({
+  )) as unknown as Record<string, unknown>[];
+  return result.map((r) => ({
     id: r.id as number,
     uploadId: r.upload_id as string,
     partNumber: r.part_number as number,

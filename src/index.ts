@@ -52,7 +52,42 @@ const server = serve({
       GET: handleSwaggerJson,
     },
     '/': {
-      GET: handleHome,
+      GET: (req: Request) => {
+        const headers = Object.fromEntries(req.headers);
+        const url = new URL(req.url);
+        if (isS3Request(headers) || url.searchParams.has('X-Amz-Signature')) {
+          return handleS3Request(req);
+        }
+        return handleHome();
+      },
+      PUT: (req: Request) => {
+        const headers = Object.fromEntries(req.headers);
+        if (isS3Request(headers)) {
+          return handleS3Request(req);
+        }
+        return new Response('Not Allowed', { status: 405 });
+      },
+      HEAD: (req: Request) => {
+        const headers = Object.fromEntries(req.headers);
+        if (isS3Request(headers)) {
+          return handleS3Request(req);
+        }
+        return new Response('Not Allowed', { status: 405 });
+      },
+      DELETE: (req: Request) => {
+        const headers = Object.fromEntries(req.headers);
+        if (isS3Request(headers)) {
+          return handleS3Request(req);
+        }
+        return new Response('Not Allowed', { status: 405 });
+      },
+      POST: (req: Request) => {
+        const headers = Object.fromEntries(req.headers);
+        if (isS3Request(headers)) {
+          return handleS3Request(req);
+        }
+        return new Response('Not Allowed', { status: 405 });
+      },
     },
     '/api/v1/*': {
       GET: handleWebApiV1,
@@ -63,7 +98,7 @@ const server = serve({
   },
   fetch: async (req: Request) => {
     const headers = Object.fromEntries(req.headers);
-    if (isS3Request(headers)) {
+    if (isS3Request(headers) || new URL(req.url).searchParams.has('X-Amz-Signature')) {
       return handleS3Request(req);
     }
     return new Response('Not Found', { status: 404 });

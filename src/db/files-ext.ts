@@ -70,15 +70,13 @@ export const listObjectsByPrefix = async (
 
   query = sql`${query} ORDER BY s3_key LIMIT ${maxKeys + 1}`;
 
-  const rawResult = (await db.execute(query)) as unknown as {
-    rows: Record<string, unknown>[];
-  };
+  const rawResult = (await db.execute(query)) as unknown as Record<string, unknown>[];
 
   if (delimiter === '/') {
     const prefixSet = new Set<string>();
     const objects: S3FileRecord[] = [];
 
-    for (const row of rawResult.rows) {
+    for (const row of rawResult) {
       const s3Key = row.s3_key as string;
       const relativeKey = s3Key.substring(prefix.length);
       const slashIndex = relativeKey.indexOf('/');
@@ -99,7 +97,7 @@ export const listObjectsByPrefix = async (
   }
 
   return {
-    objects: rawResult.rows.slice(0, maxKeys).map(mapDbRowToS3Record),
+    objects: rawResult.slice(0, maxKeys).map(mapDbRowToS3Record),
     prefixes: [],
   };
 };
@@ -107,8 +105,8 @@ export const listObjectsByPrefix = async (
 export const softDeleteFile = async (bucketId: string, s3Key: string): Promise<boolean> => {
   const result = (await db.execute(
     sql`UPDATE files SET is_deleted = true WHERE bucket_id = ${bucketId}::uuid AND s3_key = ${s3Key} RETURNING id`,
-  )) as unknown as { rows: Record<string, unknown>[] };
-  return result.rows.length > 0;
+  )) as unknown as Record<string, unknown>[];
+  return result.length > 0;
 };
 
 export const softDeleteFilesBatch = async (bucketId: string, keys: string[]): Promise<number> => {
@@ -123,8 +121,8 @@ export const softDeleteFilesBatch = async (bucketId: string, keys: string[]): Pr
 export const countBucketObjects = async (bucketId: string): Promise<number> => {
   const result = (await db.execute(
     sql`SELECT count(*) as count FROM files WHERE bucket_id = ${bucketId}::uuid AND is_deleted = false`,
-  )) as unknown as { rows: Record<string, unknown>[] };
-  return Number(result.rows[0]?.count || 0);
+  )) as unknown as Record<string, unknown>[];
+  return Number(result[0]?.count || 0);
 };
 
 export const findOrphanFilesByBucket = async (bucketId: string): Promise<File[]> => {

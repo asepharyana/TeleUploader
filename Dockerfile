@@ -21,6 +21,7 @@ WORKDIR /usr/src/app
 # Copy built files, schema, and package.json
 COPY --from=builder /usr/src/app/dist/index.js ./dist/index.js
 COPY --from=builder /usr/src/app/dist/migrate.js ./dist/migrate.js
+COPY --from=builder /usr/src/app/src/home.html ./home.html
 COPY schema.sql ./
 COPY package.json ./
 
