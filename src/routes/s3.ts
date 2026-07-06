@@ -930,31 +930,16 @@ const handleCompleteMultipartUpload = async (
   const parts = parseCompleteMultipartBody(body);
   const storedParts = await listMultipartParts(uploadId);
 
-  // Validate parts match stored parts in ascending order and correct ETags
-  const sortedParts = [...parts].sort((a, b) => a.partNumber - b.partNumber);
-  for (let i = 0; i < sortedParts.length; i++) {
-    if (sortedParts[i].partNumber !== i + 1) {
-      return s3ErrorResponse(
-        'InvalidPartOrder',
-        'The list of parts was not in ascending order. Parts must be ordered by part number.',
-        `/${bucket}/${key}`,
-        400,
-        reqId,
-      );
-    }
-  }
-  const storedMap = new Map(storedParts.map((p) => [p.partNumber, p]));
-  for (const part of parts) {
-    const stored = storedMap.get(part.partNumber);
-    if (!stored || stored.etag !== part.etag) {
-      return s3ErrorResponse(
-        'InvalidPart',
-        'One or more specified parts could not be found. The part might not have been uploaded, or the specified ETag might not match.',
-        `/${bucket}/${key}`,
-        400,
-        reqId,
-      );
-    }
+  // Validate ascending part order
+  const partNumbers = parts.map((p) => p.partNumber);
+  if (partNumbers.length > 1 && partNumbers.some((n, i) => i > 0 && n <= partNumbers[i - 1])) {
+    return s3ErrorResponse(
+      'InvalidPartOrder',
+      'The list of parts was not in ascending order.',
+      `/${bucket}/${key}`,
+      400,
+      reqId,
+    );
   }
 
   if (parts.length !== storedParts.length) {
