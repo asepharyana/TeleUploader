@@ -221,12 +221,14 @@ export const s3ErrorResponse = (
   resource: string,
   status: number,
   requestId: string = '',
+  extraHeaders: Record<string, string> = {},
 ): Response =>
   new Response(s3ErrorXml(code, message, resource, requestId), {
     status,
     headers: {
       'content-type': 'application/xml',
       ...(requestId ? { 'x-amz-request-id': requestId } : {}),
+      ...extraHeaders,
     },
   });
 

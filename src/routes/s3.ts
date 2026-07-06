@@ -20,6 +20,8 @@ import { config } from '../env';
 import { cleanupTempFile, computeHash, ensureExtension, getErrorMessage } from '../utils/file';
 import logger from '../utils/logger';
 import { verifyPresignedUrl, verifySignature } from '../utils/s3/auth';
+import { createGetObjectResponse, type ObjectPartSource } from '../utils/s3/object-stream';
+import { parseRangeHeader, unsatisfiedContentRange } from '../utils/s3/range';
 import {
   completeMultipartUploadXml,
   copyObjectResultXml,
@@ -316,7 +318,21 @@ const handleGetObject = async (
   const fileInfo = await getFileInfo(file.telegramFileId);
   const redirectUrl = `https://api.telegram.org/file/bot${fileInfo.bot_token}/${fileInfo.file_path}`;
 
-  // Proxy the content from Telegram CDN so real S3 clients get the body directly.
+  const totalSize = file.sizeBytes;
+  const range = parseRangeHeader(headers.range || null, totalSize);
+  if (range.type === 'invalid') {
+    return s3ErrorResponse(
+      'InvalidRange',
+      'The requested range is not satisfiable.',
+      `/${bucket}/${key}`,
+      416,
+      reqId,
+      {
+        'content-range': unsatisfiedContentRange(totalSize),
+      },
+    );
+  }
+
   if (!config.proxyS3Get) {
     // Legacy 302 redirect path (when proxy is disabled)
     return new Response(null, {
@@ -325,11 +341,27 @@ const handleGetObject = async (
     });
   }
 
-  const tgResponse = await fetch(redirectUrl);
-  if (!tgResponse.ok) {
+  const part: ObjectPartSource = {
+    telegramFileId: file.telegramFileId,
+    telegramUrl: redirectUrl,
+    sizeBytes: file.sizeBytes,
+    partNumber: 1,
+  };
+
+  try {
+    return await createGetObjectResponse({
+      reqId,
+      contentType: file.mimeType,
+      etag: file.fileHash || '',
+      lastModified: file.createdAt instanceof Date ? file.createdAt : new Date(file.createdAt),
+      totalSize: file.sizeBytes,
+      parts: [part],
+      range,
+    });
+  } catch (error) {
     logger.warn('Telegram content fetch failed', {
-      status: tgResponse.status,
       fileId: file.telegramFileId,
+      error: getErrorMessage(error),
     });
     return s3ErrorResponse(
       'InternalError',
@@ -339,22 +371,6 @@ const handleGetObject = async (
       reqId,
     );
   }
-
-  return new Response(tgResponse.body, {
-    status: 200,
-    headers: {
-      'content-type': file.mimeType,
-      'content-length': String(file.sizeBytes),
-      etag: `"${file.fileHash || ''}"`,
-      'last-modified':
-        file.createdAt instanceof Date
-          ? file.createdAt.toUTCString()
-          : new Date(file.createdAt).toUTCString(),
-      'x-amz-request-id': reqId,
-      'accept-ranges': 'bytes',
-      'cache-control': 'public, max-age=31536000',
-    },
-  });
 };
 
 const handleGetMultipartObject = async (

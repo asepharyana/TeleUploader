@@ -174,6 +174,15 @@ describe('S3 SDK compatibility', () => {
     expect(ETag).toBeTruthy();
   });
 
+  it('GetObject supports Range requests', async () => {
+    const { Body, ContentRange, ContentLength } = await s3.send(
+      new GetObjectCommand({ Bucket: BUCKET, Key: 'hello-sdk.txt', Range: 'bytes=0-4' }),
+    );
+    expect(ContentRange).toMatch(/^bytes 0-4\//);
+    expect(ContentLength).toBe(5);
+    expect(await Body!.transformToString()).toBe('Hello');
+  });
+
   it('GetObject returns 404 (NoSuchKey) for missing key', async () => {
     await expect(
       s3.send(new GetObjectCommand({ Bucket: BUCKET, Key: 'does-not-exist.txt' })),

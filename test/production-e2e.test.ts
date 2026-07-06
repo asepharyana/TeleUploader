@@ -369,17 +369,28 @@ describe('S3 API (production, SigV4)', () => {
     const presignedUrl = `${BASE_URL}/${bucketName}/presigned-test.txt?${sp.toString()}`;
 
     const r = await fetch(presignedUrl);
-    // Presigned URL: 200 (proxied body), 302 (redirect), or 403 (auth fail)
-    if (r.status === 403) {
-      console.warn('⚠️  Presigned URL returned 403 — verification mismatch');
-    }
-    expect([200, 302, 403]).toContain(r.status);
-    if (r.status === 200) {
-      const text = await r.text();
-      expect(text).toContain('presigned content');
-    } else if (r.status === 302) {
-      expect(r.headers.get('location')).toBeTruthy();
-    }
+    expect(r.status).toBe(200);
+    const text = await r.text();
+    expect(text).toContain('presigned content');
+  });
+
+  it('GetObject Range — returns partial single-part content', async () => {
+    const r = await s3Request('GET', `/${bucketName}/test-file.txt`, {
+      headers: { range: 'bytes=0-4' },
+    });
+    expect(r.status).toBe(206);
+    expect(r.headers.get('content-range')).toBe('bytes 0-4/8');
+    expect(await r.text()).toBe('hello');
+  });
+
+  it('GetObject Range — invalid range returns 416 XML', async () => {
+    const r = await s3Request('GET', `/${bucketName}/test-file.txt`, {
+      headers: { range: 'bytes=999-1000' },
+    });
+    expect(r.status).toBe(416);
+    expect(r.headers.get('content-range')).toBe('bytes */8');
+    const xml = await r.text();
+    expect(xml).toContain('InvalidRange');
   });
 
   it('Delete bucket — must be empty first', async () => {
