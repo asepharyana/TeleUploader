@@ -5,6 +5,10 @@ import { handleFileInfo, handleFileRedirect } from './routes/files';
 import { handleHealth } from './routes/health';
 import { handleSwaggerHtml, handleSwaggerJson } from './routes/swagger';
 import { handleUpload } from './routes/upload';
+import { handleHome } from './routes/home';
+import { handleWebApiV1 } from './routes/web-api';
+import { handleS3Request } from './routes/s3';
+import { isS3Request } from './utils/s3/auth';
 import { fileInfoCache } from './utils/cache';
 import logger from './utils/logger';
 import { metricsCollector } from './utils/metrics';
@@ -31,6 +35,22 @@ const server = serve({
     '/swagger.json': {
       GET: handleSwaggerJson,
     },
+    '/': {
+      GET: handleHome,
+    },
+    '/api/v1/*': {
+      GET: handleWebApiV1,
+      POST: handleWebApiV1,
+      DELETE: handleWebApiV1,
+      PUT: handleWebApiV1,
+    },
+  },
+  fetch: async (req: Request) => {
+    const headers = Object.fromEntries(req.headers);
+    if (isS3Request(headers)) {
+      return handleS3Request(req);
+    }
+    return new Response('Not Found', { status: 404 });
   },
 });
 
