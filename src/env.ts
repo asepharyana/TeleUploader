@@ -19,6 +19,7 @@ interface AppConfig {
   s3AccessKey: string;
   s3SecretKey: string;
   s3DefaultRegion: string;
+  proxyS3Get: boolean;
 }
 
 const requiredEnv = {
@@ -78,6 +79,7 @@ export const config: AppConfig = {
   s3AccessKey: process.env.S3_ACCESS_KEY || 'teleuploader-admin',
   s3SecretKey: process.env.S3_SECRET_KEY || '',
   s3DefaultRegion: process.env.S3_DEFAULT_REGION || 'us-east-1',
+  proxyS3Get: process.env.PROXY_S3_GET !== 'false',
 };
 
 logger.info('Environment variables loaded', {

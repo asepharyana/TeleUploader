@@ -236,10 +236,12 @@ describe('S3 API (production, SigV4)', () => {
     expect(Number(r.headers.get('content-length'))).toBeGreaterThan(0);
   });
 
-  it('GetObject (GET /{bucket}/{key}) — redirects to Telegram', async () => {
+  it('GetObject (GET /{bucket}/{key}) — proxies content from Telegram', async () => {
     const r = await s3Request('GET', `/${bucketName}/test-file.txt`);
-    expect([200, 302]).toContain(r.status);
-    if (r.status === 302) expect(r.headers.get('location')).toBeTruthy();
+    expect(r.status).toBe(200);
+    const text = await r.text();
+    expect(text).toContain('hello s3');
+    expect(r.headers.get('content-type')).toMatch(/text|octet/);
   });
 
   it('ListObjectsV1 (GET /{bucket})', async () => {
@@ -337,12 +339,17 @@ describe('S3 API (production, SigV4)', () => {
     const presignedUrl = `${BASE_URL}/${bucketName}/presigned-test.txt?${sp.toString()}`;
 
     const r = await fetch(presignedUrl);
-    // Presigned URL should return 302 (redirect to Telegram) or 403 (auth fail)
+    // Presigned URL: 200 (proxied body), 302 (redirect), or 403 (auth fail)
     if (r.status === 403) {
       console.warn('⚠️  Presigned URL returned 403 — verification mismatch');
     }
-    expect([302, 403]).toContain(r.status);
-    if (r.status === 302) expect(r.headers.get('location')).toBeTruthy();
+    expect([200, 302, 403]).toContain(r.status);
+    if (r.status === 200) {
+      const text = await r.text();
+      expect(text).toContain('presigned content');
+    } else if (r.status === 302) {
+      expect(r.headers.get('location')).toBeTruthy();
+    }
   });
 
   it('Delete bucket — must be empty first', async () => {

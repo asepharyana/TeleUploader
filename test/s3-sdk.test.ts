@@ -31,11 +31,8 @@ import {
   CopyObjectCommand,
   DeleteObjectCommand,
   DeleteObjectsCommand,
-  CreateMultipartUploadCommand,
-  UploadPartCommand,
-  CompleteMultipartUploadCommand,
-  AbortMultipartUploadCommand,
   ListMultipartUploadsCommand,
+  AbortMultipartUploadCommand,
   NoSuchKey,
   NotFound,
 } from '@aws-sdk/client-s3';
@@ -158,22 +155,15 @@ describe('S3 SDK compatibility', () => {
     expect(ContentType).toBe('text/plain');
   });
 
-  it('GetObject returns redirect to Telegram (302)', async () => {
-    // TeleUploader returns 302 -> Telegram CDN rather than the raw object body.
-    // The AWS SDK follows the redirect but the target (api.telegram.org) returns
-    // non-XML, so the deserializer throws UnknownError.
-    // We accept either a 200 with body OR an error with 302 status.
-    try {
-      const { Body, ContentType } = await s3.send(
-        new GetObjectCommand({ Bucket: BUCKET, Key: 'hello-sdk.txt' }),
-      );
-      const text = await Body!.transformToString();
-      expect(text).toBe('Hello from AWS SDK v3!');
-      expect(ContentType).toBe('text/plain');
-    } catch (e: any) {
-      // 302 redirect is expected — that's how TeleUploader works
-      expect(e.$metadata?.httpStatusCode).toBe(302);
-    }
+  it('GetObject returns stored content (proxied from Telegram)', async () => {
+    const { Body, ContentType, ContentLength, ETag } = await s3.send(
+      new GetObjectCommand({ Bucket: BUCKET, Key: 'hello-sdk.txt' }),
+    );
+    const text = await Body!.transformToString();
+    expect(text).toBe('Hello from AWS SDK v3!');
+    expect(ContentType).toBe('text/plain');
+    expect(ContentLength).toBeGreaterThan(0);
+    expect(ETag).toBeTruthy();
   });
 
   it('GetObject returns 404 (NoSuchKey) for missing key', async () => {

@@ -313,11 +313,43 @@ const handleGetObject = async (
   const fileInfo = await getFileInfo(file.telegramFileId);
   const redirectUrl = `https://api.telegram.org/file/bot${fileInfo.bot_token}/${fileInfo.file_path}`;
 
-  return new Response(null, {
-    status: 302,
+  // Proxy the content from Telegram CDN so real S3 clients get the body directly.
+  if (!config.proxyS3Get) {
+    // Legacy 302 redirect path (when proxy is disabled)
+    return new Response(null, {
+      status: 302,
+      headers: { Location: redirectUrl, 'x-amz-request-id': reqId },
+    });
+  }
+
+  const tgResponse = await fetch(redirectUrl);
+  if (!tgResponse.ok) {
+    logger.warn('Telegram content fetch failed', {
+      status: tgResponse.status,
+      fileId: file.telegramFileId,
+    });
+    return s3ErrorResponse(
+      'InternalError',
+      'Failed to fetch object content from storage',
+      `/${bucket}/${key}`,
+      502,
+      reqId,
+    );
+  }
+
+  return new Response(tgResponse.body, {
+    status: 200,
     headers: {
-      Location: redirectUrl,
+      'content-type': file.mimeType,
+      'content-length': String(file.sizeBytes),
+      etag: `"${file.fileHash || ''}"`,
+      'last-modified':
+        file.createdAt instanceof Date
+          ? file.createdAt.toUTCString()
+          : new Date(file.createdAt).toUTCString(),
       'x-amz-request-id': reqId,
+      'accept-ranges': 'bytes',
+      'cache-control': 'public, max-age=31536000',
     },
   });
 };
@@ -344,11 +376,42 @@ const handleGetMultipartObject = async (
   const fileInfo = await getFileInfo(parts[0].telegramFileId);
   const redirectUrl = `https://api.telegram.org/file/bot${fileInfo.bot_token}/${fileInfo.file_path}`;
 
-  return new Response(null, {
-    status: 302,
+  if (!config.proxyS3Get) {
+    return new Response(null, {
+      status: 302,
+      headers: { Location: redirectUrl, 'x-amz-request-id': reqId },
+    });
+  }
+
+  const tgResponse = await fetch(redirectUrl);
+  if (!tgResponse.ok) {
+    logger.warn('Telegram multipart content fetch failed', {
+      status: tgResponse.status,
+      uploadId: file.multipartUploadId,
+    });
+    return s3ErrorResponse(
+      'InternalError',
+      'Failed to fetch object content from storage',
+      `/${bucket}/${key}`,
+      502,
+      reqId,
+    );
+  }
+
+  const totalSize = parts.reduce((sum, p) => sum + p.sizeBytes, 0);
+  return new Response(tgResponse.body, {
+    status: 200,
     headers: {
-      Location: redirectUrl,
+      'content-type': file.mimeType,
+      'content-length': String(totalSize || file.sizeBytes),
+      etag: `"${file.fileHash || ''}"`,
+      'last-modified':
+        file.createdAt instanceof Date
+          ? file.createdAt.toUTCString()
+          : new Date(file.createdAt).toUTCString(),
       'x-amz-request-id': reqId,
+      'accept-ranges': 'bytes',
+      'cache-control': 'public, max-age=31536000',
     },
   });
 };
