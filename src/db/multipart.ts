@@ -85,7 +85,7 @@ export const listMultipartParts = async (uploadId: string): Promise<MultipartPar
     telegramFileId: r.telegram_file_id as string,
     telegramFileUniqueId: r.telegram_file_unique_id as string,
     storageMessageId: r.storage_message_id as number,
-    sizeBytes: r.size_bytes as number,
+    sizeBytes: Number(r.size_bytes),
     etag: r.etag as string,
     createdAt: new Date(r.created_at as string),
   }));

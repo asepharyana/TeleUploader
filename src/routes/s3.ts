@@ -393,7 +393,7 @@ const handleGetMultipartObject = async (
     );
   }
 
-  const totalSize = parts.reduce((sum, p) => sum + p.sizeBytes, 0);
+  const totalSize = parts.reduce((sum, p) => sum + Number(p.sizeBytes), 0);
   const range = parseRangeHeader(headers.range || null, totalSize);
   if (range.type === 'invalid') {
     return s3ErrorResponse(
