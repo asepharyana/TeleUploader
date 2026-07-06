@@ -1,0 +1,277 @@
+import { createBucket, findBucketByName, listBuckets, deleteBucket } from '../db/buckets';
+import {
+  findFileByBucketAndKey, listObjectsByPrefix, softDeleteFile, countBucketObjects,
+} from '../db/files-ext';
+import { createReadStream } from 'node:fs';
+import { config } from '../env';
+import { forwardToStorage, getFileInfo } from '../utils/telegram';
+import { computeHash, ensureExtension, getErrorMessage, cleanupTempFile } from '../utils/file';
+import { nanoid } from 'nanoid';
+import logger from '../utils/logger';
+
+type RouteParams = { bucket?: string; key?: string };
+
+const json = (data: unknown, status = 200) =>
+  Response.json(data, { status });
+
+const jsonError = (error: string, status: number) =>
+  Response.json({ error }, { status });
+
+// ─────── Bucket endpoints ───────
+
+export const handleListBucketsV1 = async (): Promise<Response> => {
+  const buckets = await listBuckets();
+  const result = await Promise.all(
+    buckets.map(async (b) => ({
+      id: b.id,
+      name: b.name,
+      createdAt: b.createdAt.toISOString(),
+      objectCount: await countBucketObjects(b.id),
+    })),
+  );
+  return json({ buckets: result });
+};
+
+export const handleCreateBucketV1 = async (req: Request): Promise<Response> => {
+  const body = (await req.json()) as { name?: string };
+  if (!body.name || !/^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$/.test(body.name)) {
+    return jsonError('Invalid bucket name. Use lowercase, 3-63 chars, no underscore', 400);
+  }
+  const existing = await findBucketByName(body.name);
+  if (existing) return jsonError('Bucket already exists', 409);
+  const bucket = await createBucket(body.name);
+  return json({ id: bucket.id, name: bucket.name }, 201);
+};
+
+export const handleDeleteBucketV1 = async (_req: Request, params: RouteParams): Promise<Response> => {
+  const bucket = await findBucketByName(params.bucket!);
+  if (!bucket) return jsonError('Bucket not found', 404);
+  const count = await countBucketObjects(bucket.id);
+  if (count > 0) return jsonError('Bucket is not empty', 409);
+  await deleteBucket(params.bucket!);
+  return json({ success: true });
+};
+
+// ─────── Object endpoints ───────
+
+export const handleListObjectsV1 = async (req: Request, params: RouteParams): Promise<Response> => {
+  const bucket = await findBucketByName(params.bucket!);
+  if (!bucket) return jsonError('Bucket not found', 404);
+
+  const url = new URL(req.url);
+  const prefix = url.searchParams.get('prefix') || '';
+  const delimiter = url.searchParams.get('delimiter') || '/';
+  const maxKeys = parseInt(url.searchParams.get('max-keys') || '1000', 10);
+  const continuationToken = url.searchParams.get('continuation-token') || null;
+
+  const { objects, prefixes } = await listObjectsByPrefix(
+    bucket.id, prefix, delimiter, maxKeys, continuationToken,
+  );
+  const isTruncated = objects.length > maxKeys;
+  const displayObjects = objects.slice(0, maxKeys);
+
+  return json({
+    objects: displayObjects.map((o) => ({
+      key: o.s3Key,
+      fileName: o.fileName,
+      mimeType: o.mimeType,
+      sizeBytes: o.sizeBytes,
+      fileType: o.fileType,
+      etag: o.fileHash,
+      lastModified: o.createdAt instanceof Date
+        ? o.createdAt.toISOString()
+        : new Date(o.createdAt).toISOString(),
+      downloadUrl: `${config.baseUrl}/f/${o.publicId}`,
+    })),
+    prefixes,
+    isTruncated,
+    nextContinuationToken: isTruncated
+      ? displayObjects[displayObjects.length - 1]?.s3Key
+      : null,
+  });
+};
+
+export const handleUploadObjectV1 = async (req: Request, params: RouteParams): Promise<Response> => {
+  const bucket = await findBucketByName(params.bucket!);
+  if (!bucket) return jsonError('Bucket not found', 404);
+
+  const formData = await req.formData();
+  const file = formData.get('file');
+
+  if (!file || !(file instanceof File)) {
+    return jsonError('No file provided', 400);
+  }
+
+  const key = (formData.get('key') as string) || file.name;
+  const buffer = Buffer.from(await file.arrayBuffer());
+  const hash = computeHash(buffer);
+
+  const tempPath = `/tmp/teleuploader-web-${nanoid()}`;
+  await Bun.write(tempPath, buffer);
+
+  const signatureBuffer = buffer.subarray(0, 16);
+  const { fileName: finalFileName, mimeType } = ensureExtension(
+    key.split('/').pop() || 'file',
+    signatureBuffer,
+    file.type || 'application/octet-stream',
+  );
+
+  const forwardResult = await forwardToStorage(
+    createReadStream(tempPath),
+    `s3-${bucket.name}-${key.replace(/\//g, '_')}`,
+    'document',
+  );
+
+  const publicId = nanoid();
+  const { db, files: fileSchema } = await import('../db/index');
+
+  await db.insert(fileSchema).values({
+    publicId,
+    telegramFileId: forwardResult.telegramFileId,
+    telegramFileUniqueId: forwardResult.telegramFileUniqueId,
+    storageChatId: config.storageChatId,
+    storageMessageId: forwardResult.storageMessageId,
+    fileName: finalFileName,
+    mimeType,
+    sizeBytes: buffer.byteLength,
+    fileType: 'document',
+    uploaderId: 0,
+    fileHash: hash,
+    bucketId: bucket.id,
+    s3Key: key,
+    storageBackend: 'telegram',
+    isDeleted: false,
+    createdAt: new Date(),
+    updatedAt: new Date(),
+  });
+
+  await cleanupTempFile(tempPath);
+
+  return json({ key, size: buffer.byteLength, etag: hash, downloadUrl: `${config.baseUrl}/f/${publicId}` }, 201);
+};
+
+export const handleDeleteObjectV1 = async (_req: Request, params: RouteParams): Promise<Response> => {
+  const bucket = await findBucketByName(params.bucket!);
+  if (!bucket) return jsonError('Bucket not found', 404);
+  await softDeleteFile(bucket.id, params.key!);
+  return json({ success: true });
+};
+
+export const handleDownloadObjectV1 = async (_req: Request, params: RouteParams): Promise<Response> => {
+  const bucket = await findBucketByName(params.bucket!);
+  if (!bucket) return jsonError('Bucket not found', 404);
+
+  const file = await findFileByBucketAndKey(bucket.id, params.key!);
+  if (!file) return jsonError('Object not found', 404);
+
+  const fileInfo = await getFileInfo(file.telegramFileId);
+  const redirectUrl = `https://api.telegram.org/file/bot${fileInfo.bot_token}/${fileInfo.file_path}`;
+
+  return new Response(null, { status: 302, headers: { Location: redirectUrl } });
+};
+
+export const handleCopyObjectV1 = async (req: Request, params: RouteParams): Promise<Response> => {
+  const body = (await req.json()) as {
+    sourceKey?: string;
+    destBucket?: string;
+    destKey?: string;
+  };
+
+  if (!body.sourceKey || !body.destKey) {
+    return jsonError('sourceKey and destKey are required', 400);
+  }
+
+  const destBucketName = body.destBucket || params.bucket!;
+  const sourceBucket = await findBucketByName(params.bucket!);
+  const destBucket = await findBucketByName(destBucketName);
+
+  if (!sourceBucket || !destBucket) return jsonError('Bucket not found', 404);
+
+  const sourceFile = await findFileByBucketAndKey(sourceBucket.id, body.sourceKey);
+  if (!sourceFile) return jsonError('Source object not found', 404);
+
+  const publicId = nanoid();
+  const { db, files: fileSchema } = await import('../db/index');
+
+  await db.insert(fileSchema).values({
+    publicId,
+    telegramFileId: sourceFile.telegramFileId,
+    telegramFileUniqueId: sourceFile.telegramFileUniqueId,
+    storageChatId: sourceFile.storageChatId,
+    storageMessageId: sourceFile.storageMessageId,
+    fileName: sourceFile.fileName,
+    mimeType: sourceFile.mimeType,
+    sizeBytes: sourceFile.sizeBytes,
+    fileType: sourceFile.fileType,
+    uploaderId: 0,
+    fileHash: sourceFile.fileHash,
+    bucketId: destBucket.id,
+    s3Key: body.destKey,
+    storageBackend: 'telegram',
+    isDeleted: false,
+    createdAt: new Date(),
+    updatedAt: new Date(),
+  });
+
+  return json({ sourceKey: body.sourceKey, destKey: body.destKey, destBucket: destBucketName });
+};
+
+// ─────── Router ───────
+
+export const handleWebApiV1 = async (req: Request): Promise<Response> => {
+  const url = new URL(req.url);
+  const pathname = url.pathname.replace(/^\/api\/v1/, '');
+  const parts = pathname.split('/').filter(Boolean);
+  const method = req.method;
+
+  try {
+    // GET /api/v1/buckets
+    if (parts.length === 1 && parts[0] === 'buckets' && method === 'GET') {
+      return await handleListBucketsV1();
+    }
+
+    // POST /api/v1/buckets
+    if (parts.length === 1 && parts[0] === 'buckets' && method === 'POST') {
+      return await handleCreateBucketV1(req);
+    }
+
+    // DELETE /api/v1/buckets/{name}
+    if (parts.length === 2 && parts[0] === 'buckets' && method === 'DELETE') {
+      return await handleDeleteBucketV1(req, { bucket: parts[1] });
+    }
+
+    // GET /api/v1/buckets/{name}/objects
+    if (parts.length === 3 && parts[0] === 'buckets' && parts[2] === 'objects' && method === 'GET') {
+      return await handleListObjectsV1(req, { bucket: parts[1] });
+    }
+
+    // POST /api/v1/buckets/{name}/upload
+    if (parts.length === 3 && parts[0] === 'buckets' && parts[2] === 'upload' && method === 'POST') {
+      return await handleUploadObjectV1(req, { bucket: parts[1] });
+    }
+
+    // POST /api/v1/buckets/{name}/copy
+    if (parts.length === 3 && parts[0] === 'buckets' && parts[2] === 'copy' && method === 'POST') {
+      return await handleCopyObjectV1(req, { bucket: parts[1] });
+    }
+
+    // DELETE /api/v1/buckets/{name}/{key+}
+    if (parts.length >= 3 && parts[0] === 'buckets' && method === 'DELETE') {
+      const bucket = parts[1];
+      const key = parts.slice(2).join('/');
+      return await handleDeleteObjectV1(req, { bucket, key });
+    }
+
+    // GET /api/v1/buckets/{name}/download/{key+}
+    if (parts.length >= 4 && parts[0] === 'buckets' && parts[2] === 'download' && method === 'GET') {
+      const bucket = parts[1];
+      const key = parts.slice(3).join('/');
+      return await handleDownloadObjectV1(req, { bucket, key });
+    }
+
+    return jsonError('Not found', 404);
+  } catch (error: unknown) {
+    logger.error('Web API error', { path: pathname, error: getErrorMessage(error) });
+    return jsonError('Internal server error', 500);
+  }
+};
