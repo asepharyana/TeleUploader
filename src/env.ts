@@ -16,6 +16,9 @@ interface AppConfig {
   batchMaxItems: number;
   batchMaxSizeBytes: number;
   maxRequestBodyBytes: number;
+  telegramChunkSizeBytes: number;
+  compressChunkedUploads: boolean;
+  chunkCompressionMinSizeBytes: number;
   s3AccessKey: string;
   s3SecretKey: string;
   s3DefaultRegion: string;
@@ -85,6 +88,9 @@ export const config: AppConfig = {
   batchMaxItems: parseNumber(process.env.BATCH_MAX_ITEMS, 20),
   batchMaxSizeBytes: parseNumber(process.env.BATCH_MAX_SIZE_BYTES, 500 * 1024 * 1024),
   maxRequestBodyBytes: parseNumber(process.env.MAX_REQUEST_BODY_BYTES, 2 * 1024 * 1024 * 1024),
+  telegramChunkSizeBytes: parseNumber(process.env.TELEGRAM_CHUNK_SIZE_BYTES, 20 * 1024 * 1024),
+  compressChunkedUploads: process.env.COMPRESS_CHUNKED_UPLOADS !== 'false',
+  chunkCompressionMinSizeBytes: parseNumber(process.env.CHUNK_COMPRESSION_MIN_SIZE_BYTES, 4096),
   s3AccessKey: process.env.S3_ACCESS_KEY || 'teleuploader-admin',
   s3SecretKey: process.env.S3_SECRET_KEY || '',
   s3DefaultRegion: process.env.S3_DEFAULT_REGION || 'us-east-1',

@@ -42,6 +42,7 @@ ALTER TABLE files ADD COLUMN IF NOT EXISTS s3_key TEXT;
 ALTER TABLE files ADD COLUMN IF NOT EXISTS storage_backend VARCHAR DEFAULT 'telegram';
 ALTER TABLE files ADD COLUMN IF NOT EXISTS is_deleted BOOLEAN DEFAULT false;
 ALTER TABLE files ADD COLUMN IF NOT EXISTS multipart_upload_id TEXT;
+ALTER TABLE files ADD COLUMN IF NOT EXISTS part_count INT;
 
 CREATE UNIQUE INDEX IF NOT EXISTS idx_files_bucket_key ON files(bucket_id, s3_key) WHERE is_deleted = false;
 CREATE INDEX IF NOT EXISTS idx_files_bucket_prefix ON files(bucket_id, s3_key text_pattern_ops);
@@ -73,3 +74,23 @@ CREATE TABLE IF NOT EXISTS multipart_parts (
 
 CREATE INDEX IF NOT EXISTS idx_multipart_parts_upload ON multipart_parts(upload_id, part_number);
 CREATE INDEX IF NOT EXISTS idx_multipart_uploads_status ON multipart_uploads(status);
+
+-- Permanent internal chunks for Telegram-safe storage.
+-- This is separate from S3 multipart protocol state above.
+CREATE TABLE IF NOT EXISTS file_parts (
+  id SERIAL PRIMARY KEY,
+  file_id UUID NOT NULL REFERENCES files(id) ON DELETE CASCADE,
+  part_number INT NOT NULL,
+  telegram_file_id VARCHAR NOT NULL,
+  telegram_file_unique_id VARCHAR NOT NULL,
+  storage_chat_id BIGINT NOT NULL,
+  storage_message_id BIGINT NOT NULL,
+  size_bytes BIGINT NOT NULL,
+  stored_size_bytes BIGINT NOT NULL,
+  compression_algorithm VARCHAR,
+  etag VARCHAR NOT NULL,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE(file_id, part_number)
+);
+
+CREATE INDEX IF NOT EXISTS idx_file_parts_file_id ON file_parts(file_id, part_number);

@@ -79,6 +79,12 @@ const mockForwardToStorage = mock(() =>
 
 mock.module('../src/utils/telegram', () => ({
   forwardToStorage: mockForwardToStorage,
+  getFileInfo: async (telegramFileId: string) => ({
+    file_size: 0,
+    mime_type: 'application/octet-stream',
+    file_path: `documents/${telegramFileId}`,
+    bot_token: '123456:ABC-DEF',
+  }),
   getBot: () => ({
     telegram: {
       getFile: mock(() =>

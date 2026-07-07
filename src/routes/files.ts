@@ -2,6 +2,7 @@ import { createReadStream } from 'node:fs';
 import { nanoid } from 'nanoid';
 import { findFileByPublicId } from '../db/files';
 import { fileInfoCache } from '../utils/cache';
+import { createChunkedObjectResponse } from '../utils/chunked-storage';
 import { cleanupTempFile, formatCreatedAt, getErrorMessage } from '../utils/file';
 import logger from '../utils/logger';
 import { metricsCollector } from '../utils/metrics';
@@ -50,6 +51,14 @@ export const handleFileRedirect = async (req: RequestWithParams): Promise<Respon
     if (!file) {
       logger.warn('File not found', { public_id });
       return fail(404, 'File not found');
+    }
+
+    if (file.storageBackend === 'chunked') {
+      if (file.archiveEntryName) {
+        return fail(501, 'Archive entry extraction is not supported for chunked files');
+      }
+      const range = { type: 'none' as const };
+      return createChunkedObjectResponse({ file, range, reqId: '' });
     }
 
     const archiveEntryName = file.archiveEntryName;

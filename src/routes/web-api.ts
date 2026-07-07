@@ -8,6 +8,7 @@ import {
   softDeleteFile,
 } from '../db/files-ext';
 import { config } from '../env';
+import { createChunkedObjectResponse, storeFileInTelegramChunks } from '../utils/chunked-storage';
 import { cleanupTempFile, computeHash, ensureExtension, getErrorMessage } from '../utils/file';
 import logger from '../utils/logger';
 import { forwardToStorage, getFileInfo } from '../utils/telegram';
@@ -126,9 +127,35 @@ export const handleUploadObjectV1 = async (
     file.type || 'application/octet-stream',
   );
 
+  const partFileNamePrefix = `s3-${bucket.name}-${key.replace(/\//g, '_')}`;
+
+  if (buffer.byteLength > config.telegramChunkSizeBytes) {
+    const file = await storeFileInTelegramChunks({
+      tempPath,
+      partFileNamePrefix,
+      fileName: finalFileName,
+      mimeType,
+      sizeBytes: buffer.byteLength,
+      fileType: 'document',
+      uploaderId: 0,
+      bucketId: bucket.id,
+      s3Key: key,
+    });
+    await cleanupTempFile(tempPath);
+    return json(
+      {
+        key,
+        size: buffer.byteLength,
+        etag: hash,
+        downloadUrl: `${config.baseUrl}/f/${file.publicId}`,
+      },
+      201,
+    );
+  }
+
   const forwardResult = await forwardToStorage(
     createReadStream(tempPath),
-    `s3-${bucket.name}-${key.replace(/\//g, '_')}`,
+    partFileNamePrefix,
     'document',
   );
 
@@ -183,6 +210,11 @@ export const handleDownloadObjectV1 = async (
   const file = await findFileByBucketAndKey(bucket.id, params.key!);
   if (!file) return jsonError('Object not found', 404);
 
+  if (file.storageBackend === 'chunked') {
+    const range = { type: 'none' as const };
+    return createChunkedObjectResponse({ file, range, reqId: '' });
+  }
+
   const fileInfo = await getFileInfo(file.telegramFileId);
   const redirectUrl = `https://api.telegram.org/file/bot${fileInfo.bot_token}/${fileInfo.file_path}`;
 
@@ -208,6 +240,10 @@ export const handleCopyObjectV1 = async (req: Request, params: RouteParams): Pro
 
   const sourceFile = await findFileByBucketAndKey(sourceBucket.id, body.sourceKey);
   if (!sourceFile) return jsonError('Source object not found', 404);
+
+  if (sourceFile.storageBackend === 'chunked') {
+    return json({ error: 'Copying chunked objects is not implemented' }, 501);
+  }
 
   const publicId = nanoid();
   const { db, files: fileSchema } = await import('../db/index');

@@ -1,6 +1,6 @@
 import { drizzle } from 'drizzle-orm/postgres-js';
 import postgres from 'postgres';
-import { files } from './schema';
+import { fileParts, files } from './schema';
 
 const client = postgres(process.env.DATABASE_URL!, {
   max: 10,
@@ -8,6 +8,6 @@ const client = postgres(process.env.DATABASE_URL!, {
   connect_timeout: 10,
 });
 
-export const db = drizzle(client, { schema: { files } });
-export { files };
+export const db = drizzle(client, { schema: { fileParts, files } });
+export { fileParts, files };
 export default db;

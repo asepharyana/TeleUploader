@@ -1,5 +1,14 @@
 import type { InferInsertModel, InferSelectModel } from 'drizzle-orm';
-import { bigint, boolean, pgTable, text, timestamp, uuid } from 'drizzle-orm/pg-core';
+import {
+  bigint,
+  boolean,
+  integer,
+  pgTable,
+  serial,
+  text,
+  timestamp,
+  uuid,
+} from 'drizzle-orm/pg-core';
 
 export const files = pgTable('files', {
   id: uuid('id').primaryKey().defaultRandom(),
@@ -25,9 +34,27 @@ export const files = pgTable('files', {
   storageBackend: text('storage_backend').default('telegram'),
   isDeleted: boolean('is_deleted').default(false),
   multipartUploadId: text('multipart_upload_id'),
+  partCount: integer('part_count'),
   createdAt: timestamp('created_at').defaultNow().notNull(),
   updatedAt: timestamp('updated_at').defaultNow().notNull(),
 });
 
+export const fileParts = pgTable('file_parts', {
+  id: serial('id').primaryKey(),
+  fileId: uuid('file_id').notNull(),
+  partNumber: integer('part_number').notNull(),
+  telegramFileId: text('telegram_file_id').notNull(),
+  telegramFileUniqueId: text('telegram_file_unique_id').notNull(),
+  storageChatId: bigint('storage_chat_id', { mode: 'number' }).notNull(),
+  storageMessageId: bigint('storage_message_id', { mode: 'number' }).notNull(),
+  sizeBytes: bigint('size_bytes', { mode: 'number' }).notNull(),
+  storedSizeBytes: bigint('stored_size_bytes', { mode: 'number' }).notNull(),
+  compressionAlgorithm: text('compression_algorithm'),
+  etag: text('etag').notNull(),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+});
+
 export type File = InferSelectModel<typeof files>;
 export type NewFile = InferInsertModel<typeof files>;
+export type FilePart = InferSelectModel<typeof fileParts>;
+export type NewFilePart = InferInsertModel<typeof fileParts>;

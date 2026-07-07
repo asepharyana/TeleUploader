@@ -18,6 +18,7 @@ import {
 } from '../db/multipart';
 import type { File } from '../db/schema';
 import { config } from '../env';
+import { createChunkedObjectResponse, storeFileInTelegramChunks } from '../utils/chunked-storage';
 import { cleanupTempFile, computeHash, ensureExtension, getErrorMessage } from '../utils/file';
 import logger from '../utils/logger';
 import { verifyPresignedUrl, verifySignature } from '../utils/s3/auth';
@@ -319,6 +320,35 @@ const handleGetObject = async (
       reqId,
     );
 
+  if (file.storageBackend === 'chunked') {
+    const totalSize = Number(file.sizeBytes);
+    const range = parseRangeHeader(headers.range || null, totalSize);
+    if (range.type === 'invalid') {
+      return s3ErrorResponse(
+        'InvalidRange',
+        'The requested range is not satisfiable.',
+        `/${bucket}/${key}`,
+        416,
+        reqId,
+        {
+          'content-range': unsatisfiedContentRange(totalSize),
+        },
+      );
+    }
+    try {
+      return await createChunkedObjectResponse({ file, range, reqId });
+    } catch (error) {
+      logger.warn('Chunked object content fetch failed', { key, error: getErrorMessage(error) });
+      return s3ErrorResponse(
+        'InternalError',
+        'Failed to fetch object content from storage',
+        `/${bucket}/${key}`,
+        502,
+        reqId,
+      );
+    }
+  }
+
   if (file.multipartUploadId) {
     return handleGetMultipartObject(file, bucket, key, headers, reqId);
   }
@@ -545,9 +575,28 @@ const storeFileToTelegram = async (
     contentType,
   );
 
+  const bucketId = bucketRecord.id;
+  const partFileNamePrefix = `s3-${bucketRecord.name}-${key.replace(/\//g, '_')}`;
+
+  if (buffer.byteLength > config.telegramChunkSizeBytes) {
+    const file = await storeFileInTelegramChunks({
+      tempPath,
+      partFileNamePrefix,
+      fileName: finalFileName,
+      mimeType,
+      sizeBytes: buffer.byteLength,
+      fileType: 'document',
+      uploaderId: 0,
+      bucketId,
+      s3Key: key,
+    });
+    await cleanupTempFile(tempPath);
+    return s3Response(null, 200, reqId, { etag: `"${file.fileHash}"` });
+  }
+
   const forwardResult = await forwardToStorage(
     createReadStream(tempPath),
-    `s3-${bucketRecord.name}-${key.replace(/\//g, '_')}`,
+    partFileNamePrefix,
     'document',
   );
 
@@ -566,7 +615,7 @@ const storeFileToTelegram = async (
     fileType: 'document',
     uploaderId: 0,
     fileHash: hash,
-    bucketId: bucketRecord.id,
+    bucketId,
     s3Key: key,
     storageBackend: 'telegram',
     isDeleted: false,
@@ -612,6 +661,17 @@ const handleCopyObject = async (
       404,
       reqId,
     );
+
+  if (sourceFile.storageBackend === 'chunked') {
+    // Copying chunked objects is not yet supported.
+    return s3ErrorResponse(
+      'NotImplemented',
+      'Copying chunked objects is not yet implemented.',
+      copySource,
+      501,
+      reqId,
+    );
+  }
 
   // Conditional copy: if-match / if-none-match checks
   const ifMatch = headers['x-amz-copy-source-if-match'];
@@ -882,6 +942,16 @@ const handleUploadPart = async (
 
   const body = await req.arrayBuffer();
   const buffer = Buffer.from(body);
+
+  if (buffer.byteLength > config.telegramChunkSizeBytes) {
+    return s3ErrorResponse(
+      'EntityTooLarge',
+      `Your proposed upload part size (${buffer.byteLength} bytes) exceeds the maximum allowed part size (${config.telegramChunkSizeBytes} bytes) for this storage backend. Use smaller part sizes.`,
+      `/${bucket}/${key}`,
+      400,
+      reqId,
+    );
+  }
 
   const tempPath = `/tmp/teleuploader-mp-${nanoid()}`;
   await Bun.write(tempPath, buffer);

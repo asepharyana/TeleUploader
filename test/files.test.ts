@@ -68,6 +68,11 @@ const mockGetFileInfo = mock(async (_telegramFileId: string) => ({
 }));
 
 mock.module('../src/utils/telegram', () => ({
+  forwardToStorage: async () => ({
+    telegramFileId: 'mock-tg-id',
+    telegramFileUniqueId: 'mock-tg-unique',
+    storageMessageId: 12345,
+  }),
   getFileInfo: mockGetFileInfo,
 }));
 

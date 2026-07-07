@@ -2,6 +2,7 @@ import { createWriteStream } from 'node:fs';
 import { nanoid } from 'nanoid';
 import { findFileByHash } from '../db/files';
 import { config } from '../env';
+import { storeFileInTelegramChunks } from '../utils/chunked-storage';
 import {
   buildUploadResponse,
   checkFileSize,
@@ -200,6 +201,20 @@ const handleMultipartUpload = async (req: Request): Promise<Response> => {
       return Response.json({ error: `File size exceeds ${fileType} limit` }, { status: 400 });
     }
 
+    if (prepared.sizeBytes > config.telegramChunkSizeBytes) {
+      const file = await storeFileInTelegramChunks({
+        tempPath: prepared.tempPath,
+        partFileNamePrefix: `direct-${prepared.fileHash?.slice(0, 16) || 'upload'}`,
+        fileName: finalFileName,
+        mimeType,
+        sizeBytes: prepared.sizeBytes,
+        fileType,
+        uploaderId: 0,
+      });
+      await cleanupTempFile(prepared.tempPath);
+      return Response.json(buildUploadResponse(file, config.baseUrl), { status: 200 });
+    }
+
     const uploaded = await enqueuePreparedUpload({
       prepared,
       fileName: finalFileName,
@@ -257,6 +272,21 @@ const handleJSONUpload = async (req: Request): Promise<Response> => {
     }
 
     const prepared = await writeBufferToTemp(fileBytes, hash);
+
+    if (prepared.sizeBytes > config.telegramChunkSizeBytes) {
+      const file = await storeFileInTelegramChunks({
+        tempPath: prepared.tempPath,
+        partFileNamePrefix: `direct-${prepared.fileHash?.slice(0, 16) || 'json'}`,
+        fileName: finalFileName,
+        mimeType,
+        sizeBytes: prepared.sizeBytes,
+        fileType,
+        uploaderId: 0,
+      });
+      await cleanupTempFile(prepared.tempPath);
+      return Response.json(buildUploadResponse(file, config.baseUrl), { status: 200 });
+    }
+
     const uploaded = await enqueuePreparedUpload({
       prepared,
       fileName: finalFileName,

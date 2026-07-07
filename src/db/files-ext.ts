@@ -51,6 +51,8 @@ const mapDbRowToS3Record = (row: Record<string, unknown>): S3FileRecord => {
     storageBackend: (row.storage_backend as string) || 'telegram',
     isDeleted: row.is_deleted as boolean,
     multipartUploadId: row.multipart_upload_id as string | null,
+    partCount:
+      row.part_count === null || row.part_count === undefined ? null : toNumber(row.part_count),
     createdAt: new Date(row.created_at as string),
     updatedAt: new Date(row.updated_at as string),
   };

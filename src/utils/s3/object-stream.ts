@@ -1,3 +1,4 @@
+import { gunzipSync } from 'node:zlib';
 import { applyS3Headers } from './headers';
 import { contentRange, type RangeParseResult } from './range';
 
@@ -6,6 +7,8 @@ export interface ObjectPartSource {
   telegramUrl: string;
   sizeBytes: number;
   partNumber: number;
+  storedSizeBytes?: number;
+  compressionAlgorithm?: 'gzip' | null;
 }
 
 export interface ObjectResponseInput {
@@ -54,10 +57,26 @@ const planParts = (parts: ObjectPartSource[], start: number, end: number): Plann
   return planned;
 };
 
+const streamFromBytes = (bytes: Uint8Array): ReadableStream<Uint8Array> =>
+  new Response(bytes).body!;
+
+const fetchWholePartBytes = async (telegramUrl: string): Promise<Uint8Array> => {
+  const res = await fetch(telegramUrl);
+  if (!res.ok) throw new Error(`Telegram fetch failed: ${res.status}`);
+  return new Uint8Array(await res.arrayBuffer());
+};
+
 const fetchPartBody = async (planned: PlannedPart): Promise<ReadableStream<Uint8Array>> => {
-  const rangeHeader = `bytes=${planned.relativeStart}-${planned.relativeEnd}`;
   const wantsWholePart =
     planned.relativeStart === 0 && planned.relativeEnd === planned.part.sizeBytes - 1;
+
+  if (planned.part.compressionAlgorithm === 'gzip') {
+    const storedBytes = await fetchWholePartBytes(planned.part.telegramUrl);
+    const bytes = gunzipSync(storedBytes);
+    return streamFromBytes(bytes.subarray(planned.relativeStart, planned.relativeEnd + 1));
+  }
+
+  const rangeHeader = `bytes=${planned.relativeStart}-${planned.relativeEnd}`;
   const res = await fetch(
     planned.part.telegramUrl,
     wantsWholePart ? undefined : { headers: { range: rangeHeader } },
@@ -66,7 +85,7 @@ const fetchPartBody = async (planned: PlannedPart): Promise<ReadableStream<Uint8
   if (wantsWholePart || res.status === 206) return res.body!;
 
   const bytes = new Uint8Array(await res.arrayBuffer());
-  return new Response(bytes.slice(planned.relativeStart, planned.relativeEnd + 1)).body!;
+  return streamFromBytes(bytes.slice(planned.relativeStart, planned.relativeEnd + 1));
 };
 
 const concatPartStreams = (plannedParts: PlannedPart[]): ReadableStream<Uint8Array> =>
