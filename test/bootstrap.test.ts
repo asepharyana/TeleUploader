@@ -22,10 +22,18 @@ const mockServe = mock((options: ServeOptions): MockServer => {
 const originalServe = Bun.serve;
 Bun.serve = mockServe as unknown as typeof Bun.serve;
 
+type RouteHandler = (req: Request) => Response | Promise<Response>;
+
 const mockStartBot = mock(() =>
   Promise.resolve({
     stop: mock(),
   }),
+);
+const mockHandleUpload = mock((_req: Request) => Promise.resolve(Response.json({ ok: true })));
+const mockRequireAuth = mock(
+  (_handler: RouteHandler): RouteHandler =>
+    async () =>
+      Response.json({ error: 'Unauthorized' }, { status: 401 }),
 );
 
 mock.module('../src/bot', () => ({
@@ -33,7 +41,11 @@ mock.module('../src/bot', () => ({
 }));
 
 mock.module('../src/routes/upload', () => ({
-  handleUpload: mock(),
+  handleUpload: mockHandleUpload,
+}));
+
+mock.module('../src/utils/auth', () => ({
+  requireAuth: mockRequireAuth,
 }));
 
 mock.module('../src/routes/files', () => ({
@@ -62,6 +74,8 @@ describe('Bootstrap Server', () => {
   beforeEach(() => {
     mockServe.mockClear();
     mockStartBot.mockClear();
+    mockHandleUpload.mockClear();
+    mockRequireAuth.mockClear();
   });
 
   afterAll(() => {
@@ -86,5 +100,20 @@ describe('Bootstrap Server', () => {
     expect(serveCallArgs.routes).toHaveProperty('/api/v1/auth/logout');
     expect(serveCallArgs.routes).toHaveProperty('/api/v1/auth/me');
     expect(serveCallArgs.routes).toHaveProperty('/api/v1/*');
+
+    const uploadRoute = serveCallArgs.routes?.['/api/upload'] as { POST: RouteHandler };
+    const res = await uploadRoute.POST(
+      new Request('http://localhost/api/upload', { method: 'POST' }),
+    );
+
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ ok: true });
+    expect(mockHandleUpload).toHaveBeenCalledTimes(1);
+
+    const webApiRoute = serveCallArgs.routes?.['/api/v1/*'] as { GET: RouteHandler };
+    const protectedRes = await webApiRoute.GET(new Request('http://localhost/api/v1/files'));
+
+    expect(protectedRes.status).toBe(401);
+    expect(await protectedRes.json()).toEqual({ error: 'Unauthorized' });
   });
 });

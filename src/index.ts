@@ -60,7 +60,7 @@ const server = serve({
   port: config.port,
   routes: {
     '/api/upload': {
-      POST: withRateLimit(requireAuth(handleUpload)),
+      POST: withRateLimit(handleUpload),
     },
     '/f/:public_id': {
       GET: withRateLimit(handleFileRedirect),
