@@ -7,7 +7,7 @@ const logger = winston.createLogger({
     winston.format.errors({ stack: true }),
     winston.format.json(),
   ),
-  defaultMeta: { service: 'teleuploader' },
+  defaultMeta: { service: 'filedrop' },
   transports: [
     // Write all logs including error logs to file
     new winston.transports.File({ filename: 'logs/error.log', level: 'error' }),

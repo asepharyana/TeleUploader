@@ -113,7 +113,7 @@ describe('S3 Auth (SigV4)', () => {
       .join('');
 
   it('verifies presigned GET using the public request host', async () => {
-    const accessKey = 'teleuploader-admin';
+    const accessKey = 'filedrop-admin';
     const secret = 'unit-test-secret';
     const host = 'upload.example.test';
     const path = '/bucket/key.txt';
@@ -152,10 +152,10 @@ describe('S3 Auth (SigV4)', () => {
 
   it('rejects presigned URLs signed for a different host', async () => {
     const result = await verifyPresignedUrl({
-      url: 'https://wrong.example.test/bucket/key.txt?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=teleuploader-admin%2F20260707%2Fus-east-1%2Fs3%2Faws4_request&X-Amz-Date=20260707T120000Z&X-Amz-Expires=3600&X-Amz-SignedHeaders=host&X-Amz-Signature=00',
+      url: 'https://wrong.example.test/bucket/key.txt?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=filedrop-admin%2F20260707%2Fus-east-1%2Fs3%2Faws4_request&X-Amz-Date=20260707T120000Z&X-Amz-Expires=3600&X-Amz-SignedHeaders=host&X-Amz-Signature=00',
       method: 'GET',
       headers: { host: 'upload.example.test' },
-      s3AccessKey: 'teleuploader-admin',
+      s3AccessKey: 'filedrop-admin',
       s3SecretKey: 'unit-test-secret',
       region: 'us-east-1',
       now: new Date('2026-07-07T12:05:00Z'),

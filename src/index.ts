@@ -1,6 +1,7 @@
 import { serve } from 'bun';
 import { startBot } from './bot';
 import { config } from './env';
+import { handleLogin, handleLogout, handleMe } from './routes/auth';
 import { handleFileInfo, handleFileRedirect } from './routes/files';
 import { handleHealth } from './routes/health';
 import { handleHome } from './routes/home';
@@ -8,6 +9,7 @@ import { handleS3Request } from './routes/s3';
 import { handleSwaggerHtml, handleSwaggerJson } from './routes/swagger';
 import { handleUpload } from './routes/upload';
 import { handleWebApiV1 } from './routes/web-api';
+import { requireAuth } from './utils/auth';
 import { fileInfoCache } from './utils/cache';
 import logger from './utils/logger';
 import { metricsCollector } from './utils/metrics';
@@ -58,7 +60,7 @@ const server = serve({
   port: config.port,
   routes: {
     '/api/upload': {
-      POST: withRateLimit(handleUpload),
+      POST: withRateLimit(requireAuth(handleUpload)),
     },
     '/f/:public_id': {
       GET: withRateLimit(handleFileRedirect),
@@ -89,11 +91,20 @@ const server = serve({
       POST: handleMaybeS3Root,
       OPTIONS: handleMaybeS3Root,
     },
+    '/api/v1/auth/login': {
+      POST: withRateLimit(handleLogin),
+    },
+    '/api/v1/auth/logout': {
+      POST: handleLogout,
+    },
+    '/api/v1/auth/me': {
+      GET: handleMe,
+    },
     '/api/v1/*': {
-      GET: handleWebApiV1,
-      POST: handleWebApiV1,
-      DELETE: handleWebApiV1,
-      PUT: handleWebApiV1,
+      GET: requireAuth(handleWebApiV1),
+      POST: requireAuth(handleWebApiV1),
+      DELETE: requireAuth(handleWebApiV1),
+      PUT: requireAuth(handleWebApiV1),
     },
   },
   fetch: async (req: Request) => {

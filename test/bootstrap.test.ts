@@ -45,6 +45,12 @@ mock.module('../src/routes/health', () => ({
   handleHealth: mock(),
 }));
 
+mock.module('../src/routes/auth', () => ({
+  handleLogin: mock(),
+  handleLogout: mock(),
+  handleMe: mock(),
+}));
+
 mock.module('../src/utils/rateLimit', () => ({
   cleanupRateLimitCache: mock(),
   withRateLimit: <T extends Request>(
@@ -76,5 +82,9 @@ describe('Bootstrap Server', () => {
     expect(serveCallArgs.routes).toHaveProperty('/f/:public_id');
     expect(serveCallArgs.routes).toHaveProperty('/file/:public_id/info');
     expect(serveCallArgs.routes).toHaveProperty('/health');
+    expect(serveCallArgs.routes).toHaveProperty('/api/v1/auth/login');
+    expect(serveCallArgs.routes).toHaveProperty('/api/v1/auth/logout');
+    expect(serveCallArgs.routes).toHaveProperty('/api/v1/auth/me');
+    expect(serveCallArgs.routes).toHaveProperty('/api/v1/*');
   });
 });

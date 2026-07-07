@@ -1,12 +1,12 @@
 /**
  * S3 compatibility E2E tests using the official AWS SDK v3.
  *
- * Tests that the TeleUploader S3 gateway is compatible with standard
+ * Tests that the file storage gateway is compatible with standard
  * AWS SDK clients.  All operations are exercised against the production
  * endpoint.
  *
  * Prerequisites (env vars):
- *   - S3_ACCESS_KEY     (default: teleuploader-admin)
+ *   - S3_ACCESS_KEY     (default: filedrop-admin)
  *   - S3_SECRET_KEY     (required)
  *   - BASE_URL          (default: https://upload.asepharyana.my.id)
  *
@@ -26,6 +26,7 @@ import {
   DeleteBucketCommand,
   DeleteObjectCommand,
   DeleteObjectsCommand,
+  GetBucketVersioningCommand,
   GetObjectCommand,
   HeadBucketCommand,
   HeadObjectCommand,
@@ -42,7 +43,7 @@ import {
 
 // ── Config ───────────────────────────────────────────────────────────────────
 const BASE_URL = process.env.BASE_URL || 'https://upload.asepharyana.my.id';
-const S3_KEY = process.env.S3_ACCESS_KEY || 'teleuploader-admin';
+const S3_KEY = process.env.S3_ACCESS_KEY || 'filedrop-admin';
 const S3_SECRET = process.env.S3_SECRET_KEY;
 
 const TS = Date.now().toString(36);
@@ -131,6 +132,12 @@ describe('S3 SDK compatibility', () => {
     await expect(s3.send(new HeadBucketCommand({ Bucket: 'no-such-bucket-xyz' }))).rejects.toThrow(
       NotFound,
     );
+  });
+
+  it('GetBucketVersioning returns disabled configuration for Gitea compatibility', async () => {
+    const versioning = await s3.send(new GetBucketVersioningCommand({ Bucket: BUCKET }));
+    expect(versioning.Status).toBeUndefined();
+    expect(versioning.MFADelete).toBeUndefined();
   });
 
   // ── Object operations ──────────────────────────────────────────────────────

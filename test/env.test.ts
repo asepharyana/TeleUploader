@@ -12,6 +12,9 @@ describe('Environment Variables Validation', () => {
     expect(config).toHaveProperty('logLevel');
     expect(config).toHaveProperty('rateLimitWindowMs');
     expect(config).toHaveProperty('rateLimitMaxRequests');
+    expect(config).toHaveProperty('adminApiToken');
+    expect(config).toHaveProperty('sessionCookieName');
+    expect(config).toHaveProperty('sessionMaxAgeMs');
   });
 
   it('config.botToken should return BOT_TOKEN from process.env', () => {
@@ -41,5 +44,11 @@ describe('Environment Variables Validation', () => {
 
   it('rateLimitMaxRequests should default to 150 when not specified', () => {
     expect(config.rateLimitMaxRequests).toBe(150);
+  });
+
+  it('auth config should be disabled by default with a 24 hour session', () => {
+    expect(config.adminApiToken).toBe(process.env.ADMIN_API_TOKEN || '');
+    expect(config.sessionCookieName).toBe(process.env.SESSION_COOKIE_NAME || 'tu_session');
+    expect(config.sessionMaxAgeMs).toBe(86400 * 1000);
   });
 });

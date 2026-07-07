@@ -1,5 +1,5 @@
 #!/bin/bash
-# ─── TeleUploader Deploy Script ──────────────────────────────────────────────
+# ─── FileDrop Deploy Script ──────────────────────────────────────────────────
 # Builds the Bun app locally and deploys to the VPS via Docker.
 #
 # Strategy: build dist locally, ship dist + Docker context to VPS via tar pipe,
@@ -22,14 +22,14 @@
 #   VPS_SSH_KEY           — path/contents of SSH private key
 #
 # Optional:
-#   DEPLOY_DIR            — deploy dir on VPS (default: /opt/teleuploader)
+#   DEPLOY_DIR            — deploy dir on VPS (default: /opt/filedrop)
 #   ADMIN_PASSWORD        — verify health after deploy (optional)
 # ──────────────────────────────────────────────────────────────────────────────
 
 set -eu
 
 # ── Config ────────────────────────────────────────────────────────────────────
-APP_NAME="teleuploader"
+APP_NAME="filedrop"
 GITLAB_PROJECT="superaseph%2FTeleUploader"
 DEPLOY_DIR="${DEPLOY_DIR:-/opt/${APP_NAME}}"
 COMPOSE_FILE="docker-compose.yml"

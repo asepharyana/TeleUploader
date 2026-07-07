@@ -117,7 +117,7 @@ export const handleUploadObjectV1 = async (
   const buffer = Buffer.from(await file.arrayBuffer());
   const hash = computeHash(buffer);
 
-  const tempPath = `/tmp/teleuploader-web-${nanoid()}`;
+  const tempPath = `/tmp/filedrop-web-${nanoid()}`;
   await Bun.write(tempPath, buffer);
 
   const signatureBuffer = buffer.subarray(0, 16);

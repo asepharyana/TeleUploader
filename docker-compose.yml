@@ -1,7 +1,7 @@
 services:
   app:
     build: .
-    container_name: teleuploader-app
+    container_name: filedrop-app
     restart: always
     environment:
       - BOT_TOKEN=${BOT_TOKEN}
@@ -22,7 +22,10 @@ services:
       - CHUNK_COMPRESSION_MIN_SIZE_BYTES=${CHUNK_COMPRESSION_MIN_SIZE_BYTES:-4096}
       - RATE_LIMIT_WINDOW_MS=${RATE_LIMIT_WINDOW_MS:-60000}
       - RATE_LIMIT_MAX_REQUESTS=${RATE_LIMIT_MAX_REQUESTS:-30}
-      - S3_ACCESS_KEY=${S3_ACCESS_KEY:-teleuploader-admin}
+      - ADMIN_API_TOKEN=${ADMIN_API_TOKEN:-}
+      - SESSION_COOKIE_NAME=${SESSION_COOKIE_NAME:-tu_session}
+      - SESSION_COOKIE_MAX_AGE_SECONDS=${SESSION_COOKIE_MAX_AGE_SECONDS:-86400}
+      - S3_ACCESS_KEY=${S3_ACCESS_KEY:-filedrop-admin}
       - S3_SECRET_KEY=${S3_SECRET_KEY}
       - S3_DEFAULT_REGION=${S3_DEFAULT_REGION:-us-east-1}
       - S3_VHOST_DOMAINS=${S3_VHOST_DOMAINS:-upload.asepharyana.my.id,asepharyana.web.id}
@@ -52,16 +55,16 @@ services:
       - app-shared-net
     labels:
       - "traefik.enable=true"
-      - "traefik.http.routers.teleuploader.rule=Host(`upload.asepharyana.my.id`) || Host(`upload.asepharyana.web.id`) || Host(`asepharyana.web.id`) || HostRegexp(`{subhost:[a-z0-9][a-z0-9.-]+}.asepharyana.web.id`)"
-      - "traefik.http.routers.teleuploader.entrypoints=websecure"
-      - "traefik.http.routers.teleuploader.tls=true"
-      - "traefik.http.routers.teleuploader.tls.certresolver=cloudflare"
-      - "traefik.http.services.teleuploader.loadbalancer.server.port=3000"
-      - "traefik.http.middlewares.teleuploader-rl.ratelimit.average=300"
-      - "traefik.http.middlewares.teleuploader-rl.ratelimit.burst=100"
-      - "traefik.http.middlewares.teleuploader-rl.ratelimit.period=1m"
-      - "traefik.http.middlewares.teleuploader-buf.buffering.maxRequestBodyBytes=2147483648"
-      - "traefik.http.routers.teleuploader.middlewares=teleuploader-rl@docker,teleuploader-buf@docker"
+      - "traefik.http.routers.filedrop.rule=Host(`upload.asepharyana.my.id`) || Host(`upload.asepharyana.web.id`) || Host(`asepharyana.web.id`) || HostRegexp(`{subhost:[a-z0-9][a-z0-9.-]+}.asepharyana.web.id`)"
+      - "traefik.http.routers.filedrop.entrypoints=websecure"
+      - "traefik.http.routers.filedrop.tls=true"
+      - "traefik.http.routers.filedrop.tls.certresolver=cloudflare"
+      - "traefik.http.services.filedrop.loadbalancer.server.port=3000"
+      - "traefik.http.middlewares.filedrop-rl.ratelimit.average=300"
+      - "traefik.http.middlewares.filedrop-rl.ratelimit.burst=100"
+      - "traefik.http.middlewares.filedrop-rl.ratelimit.period=1m"
+      - "traefik.http.middlewares.filedrop-buf.buffering.maxRequestBodyBytes=2147483648"
+      - "traefik.http.routers.filedrop.middlewares=filedrop-rl@docker,filedrop-buf@docker"
 
 networks:
   app-shared-net:

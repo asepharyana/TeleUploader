@@ -74,7 +74,7 @@ export const handleFileRedirect = async (req: RequestWithParams): Promise<Respon
         return fail(500, 'Server error');
       }
 
-      const tempZipPath = `/tmp/teleuploader-dl-${nanoid()}.zip`;
+      const tempZipPath = `/tmp/filedrop-dl-${nanoid()}.zip`;
       await Bun.write(tempZipPath, archiveResponse);
 
       const loc = await locateZipEntry(tempZipPath, archiveEntryName);

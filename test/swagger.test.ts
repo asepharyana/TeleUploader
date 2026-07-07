@@ -14,7 +14,7 @@ describe('Swagger Documentation Endpoints', () => {
       paths: Record<string, { get?: object; post?: object }>;
     };
     expect(body.openapi).toBe('3.0.0');
-    expect(body.info.title).toBe('TeleUploader API');
+    expect(body.info.title).toBe('FileDrop API');
     expect(body.paths).toHaveProperty('/health');
     expect(body.paths).toHaveProperty('/api/upload');
     expect(body.paths).toHaveProperty('/f/{public_id}');

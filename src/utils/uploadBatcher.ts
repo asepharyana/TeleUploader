@@ -85,7 +85,7 @@ const flushUploads = async (): Promise<void> => {
       batch.map((item) => ({ tempPath: item.prepared.tempPath, fileName: item.fileName })),
     );
     zipTempPath = zip.tempPath;
-    const archiveFileName = `teleuploader-${nanoid()}.zip`;
+    const archiveFileName = `filedrop-${nanoid()}.zip`;
     const archiveResult = await forwardToStorage(
       createReadStream(zip.tempPath),
       archiveFileName,

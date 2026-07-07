@@ -4,7 +4,7 @@
  * Tests both the Web API (JSON v1) and S3 (SigV4 XML) interfaces.
  * Requires env vars:
  *   - BASE_URL       (default: https://upload.asepharyana.my.id)
- *   - S3_ACCESS_KEY  (default: teleuploader-admin)
+ *   - S3_ACCESS_KEY  (default: filedrop-admin)
  *   - S3_SECRET_KEY  (required for S3 tests)
  *
  * Usage:
@@ -15,7 +15,7 @@ import { afterAll, describe, expect, it } from 'bun:test';
 
 // ── Config ───────────────────────────────────────────────────────────────────
 const BASE_URL = process.env.BASE_URL || 'https://upload.asepharyana.my.id';
-const S3_KEY = process.env.S3_ACCESS_KEY || 'teleuploader-admin';
+const S3_KEY = process.env.S3_ACCESS_KEY || 'filedrop-admin';
 const S3_SECRET = process.env.S3_SECRET_KEY || '';
 
 const TS = Date.now().toString(36);

@@ -59,7 +59,7 @@ const rejectOversizedRequest = (req: Request): Response | null => {
 };
 
 const streamFileToTemp = async (file: File, maxSizeBytes: number): Promise<PreparedUpload> => {
-  const tempPath = `/tmp/teleuploader-${nanoid()}`;
+  const tempPath = `/tmp/filedrop-${nanoid()}`;
   const writer = createWriteStream(tempPath);
   const hasher = new Bun.CryptoHasher('sha256');
   const reader = file.stream().getReader();
@@ -123,7 +123,7 @@ const streamFileToTemp = async (file: File, maxSizeBytes: number): Promise<Prepa
 };
 
 const writeBufferToTemp = async (fileBuffer: Buffer, fileHash: string): Promise<PreparedUpload> => {
-  const tempPath = `/tmp/teleuploader-${nanoid()}`;
+  const tempPath = `/tmp/filedrop-${nanoid()}`;
   try {
     await Bun.write(tempPath, fileBuffer);
     return {

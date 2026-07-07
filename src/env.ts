@@ -19,6 +19,9 @@ interface AppConfig {
   telegramChunkSizeBytes: number;
   compressChunkedUploads: boolean;
   chunkCompressionMinSizeBytes: number;
+  adminApiToken: string;
+  sessionCookieName: string;
+  sessionMaxAgeMs: number;
   s3AccessKey: string;
   s3SecretKey: string;
   s3DefaultRegion: string;
@@ -91,7 +94,10 @@ export const config: AppConfig = {
   telegramChunkSizeBytes: parseNumber(process.env.TELEGRAM_CHUNK_SIZE_BYTES, 20 * 1024 * 1024),
   compressChunkedUploads: process.env.COMPRESS_CHUNKED_UPLOADS !== 'false',
   chunkCompressionMinSizeBytes: parseNumber(process.env.CHUNK_COMPRESSION_MIN_SIZE_BYTES, 4096),
-  s3AccessKey: process.env.S3_ACCESS_KEY || 'teleuploader-admin',
+  adminApiToken: process.env.ADMIN_API_TOKEN || '',
+  sessionCookieName: process.env.SESSION_COOKIE_NAME || 'tu_session',
+  sessionMaxAgeMs: parseNumber(process.env.SESSION_COOKIE_MAX_AGE_SECONDS, 86400) * 1000,
+  s3AccessKey: process.env.S3_ACCESS_KEY || 'filedrop-admin',
   s3SecretKey: process.env.S3_SECRET_KEY || '',
   s3DefaultRegion: process.env.S3_DEFAULT_REGION || 'us-east-1',
   proxyS3Get: process.env.PROXY_S3_GET !== 'false',
@@ -107,6 +113,8 @@ logger.info('Environment variables loaded', {
     botToken: maskSecret(config.botToken),
     additionalBotTokens: config.additionalBotTokens.map(maskSecret),
     databaseUrl: maskDatabaseUrl(config.databaseUrl),
+    adminApiToken: maskSecret(config.adminApiToken),
+    adminApiTokenEnabled: config.adminApiToken.length > 0,
     s3AccessKey: maskSecret(config.s3AccessKey),
     s3SecretKey: maskSecret(config.s3SecretKey),
   },

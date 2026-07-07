@@ -26,6 +26,7 @@ import { S3_CORS_HEADERS, s3Headers } from '../utils/s3/headers';
 import { createGetObjectResponse, type ObjectPartSource } from '../utils/s3/object-stream';
 import { parseRangeHeader, unsatisfiedContentRange } from '../utils/s3/range';
 import {
+  bucketVersioningConfigurationXml,
   completeMultipartUploadXml,
   copyObjectResultXml,
   deleteResultXml,
@@ -147,6 +148,9 @@ export const handleS3Request = async (
     // Bucket-level operations
     if (!key) {
       if (method === 'GET') {
+        if (searchParams.has('versioning')) {
+          return handleGetBucketVersioning(bucket, reqId);
+        }
         if (searchParams.has('uploads')) {
           return handleListMultipartUploads(bucket, searchParams, reqId);
         }
@@ -289,6 +293,22 @@ const handleDeleteBucket = async (bucketName: string, reqId: string): Promise<Re
   }
   await deleteBucket(bucketName);
   return s3Response(null, 204, reqId);
+};
+
+const handleGetBucketVersioning = async (bucketName: string, reqId: string): Promise<Response> => {
+  const bucket = await findBucketByName(bucketName);
+  if (!bucket) {
+    return s3ErrorResponse(
+      'NoSuchBucket',
+      'The specified bucket does not exist.',
+      `/${bucketName}`,
+      404,
+      reqId,
+    );
+  }
+  return s3Response(bucketVersioningConfigurationXml(), 200, reqId, {
+    'content-type': 'application/xml',
+  });
 };
 
 // ─────── Object Operations ───────
@@ -564,7 +584,7 @@ const storeFileToTelegram = async (
   contentType: string,
   reqId: string,
 ): Promise<Response> => {
-  const tempPath = `/tmp/teleuploader-s3-${nanoid()}`;
+  const tempPath = `/tmp/filedrop-s3-${nanoid()}`;
   await Bun.write(tempPath, buffer);
 
   const signatureBuffer = buffer.subarray(0, 16);
@@ -953,7 +973,7 @@ const handleUploadPart = async (
     );
   }
 
-  const tempPath = `/tmp/teleuploader-mp-${nanoid()}`;
+  const tempPath = `/tmp/filedrop-mp-${nanoid()}`;
   await Bun.write(tempPath, buffer);
 
   const forwardResult = await forwardToStorage(

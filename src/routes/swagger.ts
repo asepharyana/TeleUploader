@@ -49,9 +49,9 @@ export const handleSwaggerJson = async (): Promise<Response> => {
   const spec = {
     openapi: '3.0.0',
     info: {
-      title: 'TeleUploader API',
+      title: 'FileDrop API',
       version: '1.0.0',
-      description: 'Telegram-backed file uploader API with stream-based downloads.',
+      description: 'File upload API with stream-based downloads.',
     },
     servers: [
       {
@@ -215,7 +215,7 @@ export const handleSwaggerHtml = async (): Promise<Response> => {
 <html lang="en">
   <head>
     <meta charset="UTF-8">
-    <title>TeleUploader API Documentation</title>
+    <title>FileDrop API Documentation</title>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/swagger-ui/5.17.14/swagger-ui.css">
     <style>
       html { box-sizing: border-box; overflow-y: scroll; }

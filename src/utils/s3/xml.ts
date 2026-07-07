@@ -32,6 +32,10 @@ export const listBucketsXml = (
   </Buckets>
 </ListAllMyBucketsResult>`;
 
+export const bucketVersioningConfigurationXml =
+  (): string => `<?xml version="1.0" encoding="UTF-8"?>
+<VersioningConfiguration xmlns="http://s3.amazonaws.com/doc/2006-03-01/"/>`;
+
 // ─────── Object listing ───────
 
 export const listBucketResultXml = (

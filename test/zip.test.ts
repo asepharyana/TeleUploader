@@ -14,8 +14,8 @@ const cleanup = async (...paths: string[]) => {
 
 describe('ZIP utilities', () => {
   it('should create a zip and extract entries by name', async () => {
-    const firstPath = `/tmp/teleuploader-test-${crypto.randomUUID()}-1.txt`;
-    const secondPath = `/tmp/teleuploader-test-${crypto.randomUUID()}-2.txt`;
+    const firstPath = `/tmp/filedrop-test-${crypto.randomUUID()}-1.txt`;
+    const secondPath = `/tmp/filedrop-test-${crypto.randomUUID()}-2.txt`;
     await writeFile(firstPath, 'hello');
     await writeFile(secondPath, 'world');
 
