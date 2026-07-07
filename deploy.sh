@@ -6,9 +6,9 @@
 # then rebuild the Docker image and restart the container on the VPS.
 #
 # Prerequisites:
-#   - GitLab CLI (glab) with active session, OR the env vars below
 #   - SSH access to the VPS
 #   - Docker + docker compose on the VPS
+#   - For CI: Gitea Actions secrets injected as environment variables
 #
 # Usage:
 #   ./deploy.sh                          # build + deploy
@@ -16,10 +16,15 @@
 #   ./deploy.sh --help                   # show this message
 #   ./deploy.sh --check                  # dry-run: show vars and exit
 #
-# Required env (or auto-fetched from GitLab CI vars via glab):
+# Required env in CI:
 #   VPS_HOST              — VPS IP/hostname
-#   VPS_USER              — SSH user (default: root)
-#   VPS_SSH_KEY           — path/contents of SSH private key
+#   VPS_USER              — SSH user
+#   VPS_SSH_KEY           — path to SSH private key file
+#
+# Local defaults:
+#   VPS_HOST              — 45.127.35.244
+#   VPS_USER              — root
+#   VPS_SSH_KEY           — ~/.ssh/id_ed25519
 #
 # Optional:
 #   DEPLOY_DIR            — deploy dir on VPS (default: /opt/filedrop)
@@ -30,7 +35,6 @@ set -eu
 
 # ── Config ────────────────────────────────────────────────────────────────────
 APP_NAME="filedrop"
-GITLAB_PROJECT="superaseph%2FTeleUploader"
 DEPLOY_DIR="${DEPLOY_DIR:-/opt/${APP_NAME}}"
 COMPOSE_FILE="docker-compose.yml"
 DOCKER_IMAGE="ghcr.io/mytheclipse/${APP_NAME}"
@@ -50,29 +54,11 @@ for arg in "$@"; do
   esac
 done
 
-# ── Auto-fetch credentials from GitLab CI vars ─────────────────────────────
-fetch_ci_var() {
-  glab api "projects/${GITLAB_PROJECT}/variables/$1" 2>/dev/null \
-    | python3 -c "import json,sys; print(json.load(sys.stdin).get('value',''))" 2>/dev/null || true
-}
-
 # ── Default credentials ─────────────────────────────────────────────────────
-# Hardcoded defaults for this project. Env vars take precedence.
+# Local defaults for this project. CI-provided environment variables take precedence.
 : "${VPS_HOST:=45.127.35.244}"
 : "${VPS_USER:=root}"
 : "${VPS_SSH_KEY:=${HOME}/.ssh/id_ed25519}"
-
-# Fallback: fetch from GitLab CI vars if defaults are empty (for CI runs)
-if [ -z "${VPS_HOST:-}" ]; then VPS_HOST=$(fetch_ci_var VPS_HOST); fi
-if [ -z "${VPS_USER:-}" ]; then VPS_USER=$(fetch_ci_var VPS_USERNAME); fi
-if [ -z "${VPS_SSH_KEY:-}" ]; then
-  KEY=$(fetch_ci_var VPS_SSH_KEY)
-  if [ -n "$KEY" ]; then
-    VPS_SSH_KEY=$(mktemp)
-    echo "$KEY" > "$VPS_SSH_KEY"
-    chmod 600 "$VPS_SSH_KEY"
-  fi
-fi
 
 # ── Check mode ────────────────────────────────────────────────────────────────
 if $DO_CHECK; then
@@ -93,6 +79,11 @@ if $DO_CHECK; then
   exit 0
 fi
 
+# ── Helpers ───────────────────────────────────────────────────────────────────
+log()  { echo "→ $*"; }
+ok()   { echo "✓ $*"; }
+die()  { echo "✗ $*"; exit 1; }
+
 # ── Validate ──────────────────────────────────────────────────────────────────
 # (Defaults are set above — this fails only if something went wrong)
 : "${VPS_HOST:?VPS_HOST resolved to empty}"
@@ -103,11 +94,7 @@ fi
 SSH_DEST="${VPS_USER}@${VPS_HOST}"
 SSH_OPTS="-i $VPS_SSH_KEY -o StrictHostKeyChecking=accept-new"
 
-# ── Helpers ───────────────────────────────────────────────────────────────────
 vps()  { ssh $SSH_OPTS "$SSH_DEST" "$@"; }
-log()  { echo "→ $*"; }
-ok()   { echo "✓ $*"; }
-die()  { echo "✗ $*"; exit 1; }
 
 # ── 1. Test SSH connection ────────────────────────────────────────────────────
 log "Testing SSH connection to ${VPS_USER}@${VPS_HOST}..."
