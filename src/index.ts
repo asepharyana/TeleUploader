@@ -1,21 +1,14 @@
 import { serve } from 'bun';
-import { startBot } from './bot';
-import { config } from './env';
-import { handleLogin, handleLogout, handleMe } from './routes/auth';
-import { handleFileInfo, handleFileRedirect } from './routes/files';
-import { handleHealth } from './routes/health';
-import { handleHome } from './routes/home';
-import { handleS3Request } from './routes/s3';
-import { handleSwaggerHtml, handleSwaggerJson } from './routes/swagger';
-import { handleUpload } from './routes/upload';
-import { handleWebApiV1 } from './routes/web-api';
-import { requireAuth } from './utils/auth';
-import { fileInfoCache } from './utils/cache';
-import logger from './utils/logger';
-import { metricsCollector } from './utils/metrics';
-import { cleanupRateLimitCache, withRateLimit } from './utils/rateLimit';
-import { isS3Request } from './utils/s3/auth';
-import { extractS3BucketFromHost } from './utils/s3/virtual-host';
+import { config } from './config/index';
+import { startBot } from './interfaces/bot/handler';
+import { routes } from './interfaces/http/routes/index';
+import { isS3Request } from './interfaces/s3/auth';
+import { handleS3Request } from './interfaces/http/controllers/s3-controller';
+import { extractS3BucketFromHost } from './interfaces/s3/virtual-host';
+import { fileInfoCache } from './infrastructure/cache/index';
+import { cleanupRateLimitCache } from './interfaces/http/middleware/rate-limit';
+import { logger } from './shared/logger/index';
+import { metricsCollector } from './shared/metrics/index';
 
 // ─── Auto-run migration at startup ──────────────────────────────────────────
 try {
@@ -58,55 +51,7 @@ const handleMaybeS3Root = (req: Request): Response | Promise<Response> => {
 
 const server = serve({
   port: config.port,
-  routes: {
-    '/api/upload': {
-      POST: withRateLimit(handleUpload),
-    },
-    '/f/:public_id': {
-      GET: withRateLimit(handleFileRedirect),
-    },
-    '/file/:public_id/info': {
-      GET: withRateLimit(handleFileInfo),
-    },
-    '/health': {
-      GET: handleHealth,
-    },
-    '/docs': {
-      GET: handleSwaggerHtml,
-    },
-    '/swagger.json': {
-      GET: handleSwaggerJson,
-    },
-    '/': {
-      GET: (req: Request) => {
-        const headers = Object.fromEntries(req.headers);
-        if (shouldHandleS3(req, headers)) {
-          return handleS3Request(req, getS3RouteBucket(req));
-        }
-        return handleHome();
-      },
-      PUT: handleMaybeS3Root,
-      HEAD: handleMaybeS3Root,
-      DELETE: handleMaybeS3Root,
-      POST: handleMaybeS3Root,
-      OPTIONS: handleMaybeS3Root,
-    },
-    '/api/v1/auth/login': {
-      POST: withRateLimit(handleLogin),
-    },
-    '/api/v1/auth/logout': {
-      POST: handleLogout,
-    },
-    '/api/v1/auth/me': {
-      GET: handleMe,
-    },
-    '/api/v1/*': {
-      GET: requireAuth(handleWebApiV1),
-      POST: requireAuth(handleWebApiV1),
-      DELETE: requireAuth(handleWebApiV1),
-      PUT: requireAuth(handleWebApiV1),
-    },
-  },
+  routes,
   fetch: async (req: Request) => {
     if (req.method === 'OPTIONS') {
       return handleS3Request(req, getS3RouteBucket(req));

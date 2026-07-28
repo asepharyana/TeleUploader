@@ -1,29 +1,62 @@
 import { nanoid } from 'nanoid';
 import { type Context, Telegraf } from 'telegraf';
-import { db, files as fileSchema } from './db';
-import { findFileByUniqueId } from './db/files';
-import { config } from './env';
+import { config } from '../../env';
+import type { NewFile } from '../../domain/entities/file';
+import type { IFileRepository } from '../../domain/ports/file-repository';
+import type { ITelegramService } from '../../domain/ports/telegram-service';
+import { DrizzleFileRepository } from '../../infrastructure/persistence/repositories/file-repository';
+import { botPool } from '../../infrastructure/telegram/bot-pool';
 import {
   detectFileType,
   extractFileFromMessage,
   getErrorMessage,
   getFileSizeLimit,
   type TelegramMediaMessage,
-} from './utils/file';
-import logger from './utils/logger';
-import { forwardToStorage } from './utils/telegram';
+} from '../../shared/utils/file';
+import logger from '../../shared/logger/index';
 
+/**
+ * Minimal bot context shape used by the media event handler.
+ *
+ * Represents the subset of Telegraf's Context that the handler requires
+ * for processing incoming media messages.
+ */
 type BotContext = {
+  /** The incoming media message with file attachments. */
   message: TelegramMediaMessage;
+  /** The sender of the message. */
   from: { id: number };
+  /** The chat where the message was sent, if available. */
   chat?: { id: number };
+  /**
+   * Reply to the message with text.
+   *
+   * @param text - The reply text.
+   * @param extra - Optional reply parameters (e.g. reply_parameters for threading).
+   */
   reply: (text: string, extra?: { reply_parameters: { message_id: number } }) => Promise<unknown>;
 };
 
+/**
+ * Duck-typed object that exposes a Telegraf-style `on()` method
+ * for registering event handlers on multiple event types.
+ */
 type MediaEventRegistrar = {
+  /**
+   * Register a handler for the given event types.
+   *
+   * @param events - Array of event type strings (e.g. "document", "photo").
+   * @param handler - Async handler receiving the bot context.
+   */
   on: (events: string[], handler: (ctx: BotContext) => Promise<unknown>) => void;
 };
 
+/**
+ * Replies to a Telegram message with a download URL for the uploaded file.
+ *
+ * @param ctx - The bot context for the incoming message.
+ * @param publicId - The public identifier of the uploaded file.
+ */
 const replyWithDownloadUrl = async (ctx: BotContext, publicId: string): Promise<void> => {
   const url = `${config.baseUrl}/f/${publicId}`;
   await ctx.reply(`File berhasil diupload! 📎\n\nDownload: ${url}`, {
@@ -31,7 +64,33 @@ const replyWithDownloadUrl = async (ctx: BotContext, publicId: string): Promise<
   });
 };
 
-export const startBot = async (): Promise<Telegraf<Context>> => {
+/**
+ * Start the Telegram bot and register message handlers.
+ *
+ * Creates a Telegraf instance, registers a `/start` command handler,
+ * logging middleware, and media event handlers for all supported file types.
+ * Incoming media files are deduplicated by their Telegram unique ID,
+ * forwarded to the storage channel, and persisted with a public download URL.
+ *
+ * @param deps - Optional external dependencies for testing or DI override.
+ * @param deps.telegramService - The Telegram service used to forward files to
+ *   the storage channel. Defaults to the singleton BotPool instance.
+ * @param deps.fileRepo - The file repository used for deduplication queries
+ *   and persisting new file records. Defaults to a new DrizzleFileRepository.
+ * @returns The launched Telegraf bot instance, suitable for graceful shutdown
+ *   via `bot.stop(signal)`.
+ */
+export async function startBot(
+  deps: {
+    /** The Telegram service to forward files to storage. */
+    telegramService?: ITelegramService;
+    /** The file repository for deduplication and persistence. */
+    fileRepo?: IFileRepository;
+  } = {},
+): Promise<Telegraf<Context>> {
+  const telegramService = deps.telegramService ?? botPool;
+  const fileRepo = deps.fileRepo ?? new DrizzleFileRepository();
+
   try {
     const bot = new Telegraf(config.botToken);
 
@@ -74,7 +133,7 @@ export const startBot = async (): Promise<Telegraf<Context>> => {
             return ctx.reply(`File size exceeds ${maxSize / (1024 * 1024)}MB limit`);
           }
 
-          const existing = await findFileByUniqueId(fileObj.file_unique_id);
+          const existing = await fileRepo.findByUniqueId(fileObj.file_unique_id);
 
           if (existing) {
             await replyWithDownloadUrl(ctx, existing.publicId);
@@ -87,25 +146,36 @@ export const startBot = async (): Promise<Telegraf<Context>> => {
             return;
           }
 
-          const result = await forwardToStorage(file_id, fileName, fileType);
+          const result = await telegramService.forwardToStorage(file_id, fileName, fileType);
           const publicId = nanoid();
 
-          const uploaded = {
-            publicId: publicId,
+          const uploaded: NewFile = {
+            publicId,
             telegramFileId: result.telegramFileId,
             telegramFileUniqueId: result.telegramFileUniqueId,
             storageChatId: config.storageChatId,
             storageMessageId: result.storageMessageId,
-            fileName: fileName,
+            fileName,
             mimeType: mime_type || 'application/octet-stream',
             sizeBytes: fileSize,
-            fileType: fileType,
+            fileType,
             uploaderId: ctx.from.id,
-            createdAt: new Date(),
-            updatedAt: new Date(),
+            fileHash: null,
+            archiveTelegramFileId: null,
+            archiveStorageMessageId: null,
+            archiveFileName: null,
+            archiveEntryName: null,
+            archiveMimeType: null,
+            archiveSizeBytes: null,
+            bucketId: null,
+            s3Key: null,
+            storageBackend: 'telegram',
+            isDeleted: false,
+            multipartUploadId: null,
+            partCount: null,
           };
 
-          await db.insert(fileSchema).values(uploaded);
+          await fileRepo.create(uploaded);
 
           await replyWithDownloadUrl(ctx, publicId);
 
@@ -134,4 +204,4 @@ export const startBot = async (): Promise<Telegraf<Context>> => {
     logger.error('Failed to start bot', { error: getErrorMessage(error) });
     throw error;
   }
-};
+}
