@@ -681,7 +681,71 @@ const handleHeadObject = async (bucket: string, key: string, reqId: string): Pro
 };
 
 /**
+ * Streams the request body to a temporary file while computing its SHA-256 hash.
+ *
+ * Unlike `req.arrayBuffer()`, this approach uses O(1) memory regardless of
+ * file size, making it safe for multi-GB Docker registry layer blobs.
+ *
+ * @param body - The ReadableStream from the HTTP request body.
+ * @returns The temp file path, SHA-256 hash, total size, and signature bytes.
+ */
+const streamBodyToTemp = async (
+  body: ReadableStream<Uint8Array> | null,
+): Promise<{
+  tempPath: string;
+  fileHash: string;
+  sizeBytes: number;
+  signatureBuffer: Buffer;
+}> => {
+  const tempPath = `/tmp/filedrop-s3-${nanoid()}`;
+  const writer = Bun.file(tempPath).writer();
+  const hasher = new Bun.CryptoHasher('sha256');
+  const reader = (body ?? new ReadableStream({ start(c) { c.close() } })).getReader();
+  const SIGNATURE_BYTES = 16;
+  const signatureChunks: Buffer[] = [];
+  let signatureBytes = 0;
+  let sizeBytes = 0;
+
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      const chunk = Buffer.from(value);
+      sizeBytes += chunk.byteLength;
+      hasher.update(chunk);
+      writer.write(chunk);
+
+      if (signatureBytes < SIGNATURE_BYTES) {
+        const remaining = SIGNATURE_BYTES - signatureBytes;
+        const sigChunk = chunk.subarray(0, remaining);
+        signatureChunks.push(sigChunk);
+        signatureBytes += sigChunk.byteLength;
+      }
+    }
+
+    writer.end();
+
+    return {
+      tempPath,
+      fileHash: hasher.digest('hex'),
+      sizeBytes,
+      signatureBuffer: Buffer.concat(signatureChunks, signatureBytes),
+    };
+  } catch (error) {
+    writer.end();
+    await cleanupTempFile(tempPath);
+    throw error;
+  } finally {
+    reader.releaseLock();
+  }
+};
+
+/**
  * Handles PUT /{bucket}/{key} — uploads an S3 object.
+ *
+ * Streams the request body directly to a temporary file to avoid buffering
+ * the entire payload in memory. This is essential for supporting large
+ * Docker registry layer blobs (100MB–2GB+).
  *
  * Supports regular binary uploads, copy-object via `x-amz-copy-source`,
  * and tag operations. Large files are stored as chunked objects (across
@@ -725,74 +789,70 @@ const handlePutObject = async (
     return handleCopyObject(bucket, key, copySource, headers, bucketRecord.id, reqId);
   }
 
-  // Regular PUT: read raw binary body
-  const body = await req.arrayBuffer();
-  const fileBuffer = Buffer.from(body);
+  // Stream body to temp file — O(1) memory, safe for multi-GB blobs
   const contentType = headers['content-type'] || 'application/octet-stream';
-  const hash = computeHash(fileBuffer);
+  const streamed = await streamBodyToTemp(req.body);
 
   // Idempotent PUT: if the object already exists, skip upload
   const existing = await findFileByBucketAndKey(bucketRecord.id, key);
   if (existing) {
-    return s3Response(null, 200, reqId, { etag: `"${hash}"` });
+    await cleanupTempFile(streamed.tempPath);
+    return s3Response(null, 200, reqId, { etag: `"${streamed.fileHash}"` });
   }
 
-  return await storeFileToTelegram(fileBuffer, hash, key, bucketRecord, contentType, reqId);
+  return await storeFileFromTemp(streamed, key, bucketRecord, contentType, reqId);
 };
 
 /**
- * Stores a file buffer to Telegram storage as an S3 object.
+ * Stores a streamed file to Telegram storage as an S3 object.
+ *
+ * Accepts the result of `streamBodyToTemp` (temp path + hash + size) instead
+ * of a raw Buffer, enabling O(1) memory usage for multi-GB Docker layer blobs.
  *
  * Handles both chunked (large files) and single-message (small files) paths.
  *
- * @param buffer - The raw file content buffer.
- * @param hash - Pre-computed SHA-256 hex digest.
+ * @param streamed - The streamed file result (temp path, hash, size, signature).
  * @param key - The S3 object key.
  * @param bucketRecord - The resolved bucket record (id and name).
  * @param contentType - The MIME type from the request Content-Type header.
  * @param reqId - The request identifier for S3 headers.
  * @returns An S3 response with the etag of the stored object.
  */
-const storeFileToTelegram = async (
-  buffer: Buffer,
-  hash: string,
+const storeFileFromTemp = async (
+  streamed: { tempPath: string; fileHash: string; sizeBytes: number; signatureBuffer: Buffer },
   key: string,
   bucketRecord: { id: string; name: string },
   contentType: string,
   reqId: string,
 ): Promise<Response> => {
-  const tempPath = `/tmp/filedrop-s3-${nanoid()}`;
-  await Bun.write(tempPath, buffer);
-
-  const signatureBuffer = buffer.subarray(0, 16);
   const fileName = key.split('/').pop() || 'file';
   const { fileName: finalFileName, mimeType } = ensureExtension(
     fileName,
-    signatureBuffer,
+    streamed.signatureBuffer,
     contentType,
   );
 
   const bucketId = bucketRecord.id;
   const partFileNamePrefix = `s3-${bucketRecord.name}-${key.replace(/\//g, '_')}`;
 
-  if (buffer.byteLength > config.telegramChunkSizeBytes) {
+  if (streamed.sizeBytes > config.telegramChunkSizeBytes) {
     const file = await storeFileInTelegramChunks({
-      tempPath,
+      tempPath: streamed.tempPath,
       partFileNamePrefix,
       fileName: finalFileName,
       mimeType,
-      sizeBytes: buffer.byteLength,
+      sizeBytes: streamed.sizeBytes,
       fileType: 'document',
       uploaderId: 0,
       bucketId,
       s3Key: key,
     });
-    await cleanupTempFile(tempPath);
+    await cleanupTempFile(streamed.tempPath);
     return s3Response(null, 200, reqId, { etag: `"${file.fileHash}"` });
   }
 
   const forwardResult = await forwardToStorage(
-    createReadStream(tempPath),
+    createReadStream(streamed.tempPath),
     partFileNamePrefix,
     'document',
   );
@@ -808,10 +868,10 @@ const storeFileToTelegram = async (
     storageMessageId: forwardResult.storageMessageId,
     fileName: finalFileName,
     mimeType,
-    sizeBytes: buffer.byteLength,
+    sizeBytes: streamed.sizeBytes,
     fileType: 'document',
     uploaderId: 0,
-    fileHash: hash,
+    fileHash: streamed.fileHash,
     bucketId,
     s3Key: key,
     storageBackend: 'telegram',
@@ -820,9 +880,9 @@ const storeFileToTelegram = async (
     updatedAt: new Date(),
   });
 
-  await cleanupTempFile(tempPath);
+  await cleanupTempFile(streamed.tempPath);
 
-  return s3Response(null, 200, reqId, { etag: `"${hash}"` });
+  return s3Response(null, 200, reqId, { etag: `"${streamed.fileHash}"` });
 };
 
 /**
@@ -1210,21 +1270,41 @@ const handleUploadPart = async (
     );
   }
 
-  const body = await req.arrayBuffer();
-  const buffer = Buffer.from(body);
+  // Stream the part body to temp — O(1) memory, safe for large parts
+  const tempPath = `/tmp/filedrop-mp-${nanoid()}`;
+  const writer = Bun.file(tempPath).writer();
+  const reader = (req.body ?? new ReadableStream({ start(c) { c.close() } })).getReader();
+  const hasher = new Bun.CryptoHasher('sha256');
+  let sizeBytes = 0;
 
-  if (buffer.byteLength > config.telegramChunkSizeBytes) {
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      const chunk = Buffer.from(value);
+      sizeBytes += chunk.byteLength;
+      hasher.update(chunk);
+      writer.write(chunk);
+    }
+    writer.end();
+  } catch (error) {
+    writer.end();
+    await cleanupTempFile(tempPath);
+    throw error;
+  } finally {
+    reader.releaseLock();
+  }
+
+  if (sizeBytes > config.telegramChunkSizeBytes) {
+    await cleanupTempFile(tempPath);
     return s3ErrorResponse(
       'EntityTooLarge',
-      `Your proposed upload part size (${buffer.byteLength} bytes) exceeds the maximum allowed part size (${config.telegramChunkSizeBytes} bytes) for this storage backend. Use smaller part sizes.`,
+      `Your proposed upload part size (${sizeBytes} bytes) exceeds the maximum allowed part size (${config.telegramChunkSizeBytes} bytes) for this storage backend. Use smaller part sizes.`,
       `/${bucket}/${key}`,
       400,
       reqId,
     );
   }
-
-  const tempPath = `/tmp/filedrop-mp-${nanoid()}`;
-  await Bun.write(tempPath, buffer);
 
   const forwardResult = await forwardToStorage(
     createReadStream(tempPath),
@@ -1234,14 +1314,14 @@ const handleUploadPart = async (
 
   await cleanupTempFile(tempPath);
 
-  const etag = computeHash(buffer);
+  const etag = hasher.digest('hex');
   await insertMultipartPart({
     uploadId,
     partNumber,
     telegramFileId: forwardResult.telegramFileId,
     telegramFileUniqueId: forwardResult.telegramFileUniqueId,
     storageMessageId: forwardResult.storageMessageId,
-    sizeBytes: buffer.byteLength,
+    sizeBytes,
     etag,
   });
 

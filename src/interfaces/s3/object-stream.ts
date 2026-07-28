@@ -2,6 +2,9 @@ import { gunzipSync } from 'node:zlib';
 import { applyS3Headers } from './headers';
 import { contentRange, type RangeParseResult } from './range';
 
+/** Timeout (ms) for individual Telegram CDN chunk fetches. */
+const TELEGRAM_FETCH_TIMEOUT_MS = 30_000;
+
 export interface ObjectPartSource {
   telegramFileId: string;
   telegramUrl: string;
@@ -61,9 +64,15 @@ const streamFromBytes = (bytes: Uint8Array): ReadableStream<Uint8Array> =>
   new Response(bytes).body!;
 
 const fetchWholePartBytes = async (telegramUrl: string): Promise<Uint8Array> => {
-  const res = await fetch(telegramUrl);
-  if (!res.ok) throw new Error(`Telegram fetch failed: ${res.status}`);
-  return new Uint8Array(await res.arrayBuffer());
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), TELEGRAM_FETCH_TIMEOUT_MS);
+  try {
+    const res = await fetch(telegramUrl, { signal: controller.signal });
+    if (!res.ok) throw new Error(`Telegram fetch failed: ${res.status}`);
+    return new Uint8Array(await res.arrayBuffer());
+  } finally {
+    clearTimeout(timer);
+  }
 };
 
 const fetchPartBody = async (planned: PlannedPart): Promise<ReadableStream<Uint8Array>> => {
@@ -77,10 +86,10 @@ const fetchPartBody = async (planned: PlannedPart): Promise<ReadableStream<Uint8
   }
 
   const rangeHeader = `bytes=${planned.relativeStart}-${planned.relativeEnd}`;
-  const res = await fetch(
-    planned.part.telegramUrl,
-    wantsWholePart ? undefined : { headers: { range: rangeHeader } },
-  );
+  const fetchOpts = wantsWholePart
+    ? { signal: AbortSignal.timeout(TELEGRAM_FETCH_TIMEOUT_MS) }
+    : { headers: { range: rangeHeader }, signal: AbortSignal.timeout(TELEGRAM_FETCH_TIMEOUT_MS) };
+  const res = await fetch(planned.part.telegramUrl, fetchOpts);
   if (!res.ok) throw new Error(`Telegram fetch failed: ${res.status}`);
   if (wantsWholePart || res.status === 206) return res.body!;
 

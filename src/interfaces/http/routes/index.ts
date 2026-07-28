@@ -59,6 +59,21 @@ const handleMaybeS3Root = (req: Request): Response | Promise<Response> => {
 };
 
 /**
+ * Wraps `handleS3Request` with rate limiting.
+ *
+ * S3 API calls (used by Docker registry) are rate-limited per client IP to
+ * prevent resource exhaustion. The default limit (150 req/60s window) allows
+ * concurrent layer pushes while still providing protection.
+ *
+ * @param req - The incoming S3 request.
+ * @returns The S3 response or a 429 Too Many Requests error.
+ */
+const handleS3WithRateLimit = (req: Request): Promise<Response> => {
+  const handler = () => handleS3Request(req, getS3RouteBucket(req));
+  return withRateLimit(handler as (req: Request) => Promise<Response>)(req);
+};
+
+/**
  * Defines all HTTP routes for the application.
  *
  * Each route maps a URL pattern to its corresponding handler function(s),
@@ -93,15 +108,24 @@ export const routes = {
     GET: (req: Request): Promise<Response> => {
       const headers = Object.fromEntries(req.headers);
       if (shouldHandleS3(req, headers)) {
-        return handleS3Request(req, getS3RouteBucket(req));
+        return handleS3WithRateLimit(req);
       }
       return handleHome();
     },
-    PUT: handleMaybeS3Root,
-    HEAD: handleMaybeS3Root,
-    DELETE: handleMaybeS3Root,
-    POST: handleMaybeS3Root,
-    OPTIONS: handleMaybeS3Root,
+    PUT: (req: Request): Promise<Response> => {
+      if (req.method === 'OPTIONS') {
+        return handleS3Request(req, getS3RouteBucket(req));
+      }
+      const headers = Object.fromEntries(req.headers);
+      if (shouldHandleS3(req, headers)) {
+        return handleS3WithRateLimit(req);
+      }
+      return new Response('Not Allowed', { status: 405 });
+    },
+    HEAD: handleS3WithRateLimit,
+    DELETE: handleS3WithRateLimit,
+    POST: handleS3WithRateLimit,
+    OPTIONS: handleS3WithRateLimit,
   },
   '/api/v1/auth/login': {
     POST: withRateLimit(handleLogin),
