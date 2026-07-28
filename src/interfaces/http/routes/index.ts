@@ -7,9 +7,9 @@ import { handleS3Request } from '../controllers/s3-controller';
 import { handleSwaggerHtml, handleSwaggerJson } from '../../../routes/swagger';
 import { handleUpload } from '../controllers/upload-controller';
 import { handleWebApiV1 } from '../controllers/web-api-controller';
-import { requireAuth } from '../../../utils/auth';
-import { withRateLimit } from '../../../utils/rateLimit';
-import { isS3Request } from '../../../utils/s3/auth';
+import { requireAuth } from '../middleware/auth';
+import { withRateLimit } from '../middleware/rate-limit';
+import { isS3Request } from '../../s3/auth';
 import { extractS3BucketFromHost } from '../../../utils/s3/virtual-host';
 
 /**

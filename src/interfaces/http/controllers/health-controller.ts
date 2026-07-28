@@ -1,7 +1,7 @@
 import { sql } from 'drizzle-orm';
-import { db } from '../../../db';
+import { db } from '../../../infrastructure/persistence/drizzle/index';
 import { getErrorMessage } from '../../../shared/utils/file';
-import logger from '../../../utils/logger';
+import logger from '../../../shared/logger/index';
 
 /**
  * Handles the health-check endpoint.
