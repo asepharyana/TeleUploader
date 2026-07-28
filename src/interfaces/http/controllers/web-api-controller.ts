@@ -1,5 +1,6 @@
 import { createReadStream } from 'node:fs';
 import { nanoid } from 'nanoid';
+import { config } from '../../../config/index';
 import { createBucket, deleteBucket, findBucketByName, listBuckets } from '../../../db/buckets';
 import {
   countBucketObjects,
@@ -7,10 +8,12 @@ import {
   listObjectsByPrefix,
   softDeleteFile,
 } from '../../../db/files-ext';
-import { config } from '../../../config/index';
-import { createChunkedObjectResponse, storeFileInTelegramChunks } from '../../../utils/chunked-storage';
-import { cleanupTempFile, computeHash, ensureExtension, getErrorMessage } from '../../../shared/utils/file';
 import logger from '../../../shared/logger/index';
+import { cleanupTempFile, ensureExtension, getErrorMessage } from '../../../shared/utils/file';
+import {
+  createChunkedObjectResponse,
+  storeFileInTelegramChunks,
+} from '../../../utils/chunked-storage';
 import { forwardToStorage, getFileInfo } from '../../../utils/telegram';
 
 /**

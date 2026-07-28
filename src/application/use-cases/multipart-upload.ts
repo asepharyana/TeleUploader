@@ -116,10 +116,7 @@ export interface MultipartDeps {
  *          the upload initiation result, or `null` when the bucket is not found.
  */
 export function createInitiateMultipartUploadUseCase(deps: MultipartDeps) {
-  return async (
-    bucketName: string,
-    key: string,
-  ): Promise<InitiateMultipartResult | null> => {
+  return async (bucketName: string, key: string): Promise<InitiateMultipartResult | null> => {
     const bucket = await deps.bucketRepo.findByName(bucketName);
     if (!bucket) return null;
 

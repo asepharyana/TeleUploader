@@ -43,8 +43,7 @@ const getSecret = (secret?: string): string => secret ?? config.adminApiToken;
 const getCookieName = (cookieName?: string): string => cookieName ?? config.sessionCookieName;
 const getMaxAgeMs = (maxAgeMs?: number): number => maxAgeMs ?? config.sessionMaxAgeMs;
 
-const encodePayload = (value: string): string =>
-  Buffer.from(value, 'utf8').toString('base64url');
+const encodePayload = (value: string): string => Buffer.from(value, 'utf8').toString('base64url');
 
 const decodePayload = (value: string): string | null => {
   try {
@@ -107,10 +106,7 @@ export const signCookiePayload = (payload: string, secret: string): string =>
  * @param secret      - HMAC signing key.
  * @returns The unsigned payload string, or `null` on failure.
  */
-export const verifyCookieSignature = (
-  cookieValue: string,
-  secret: string,
-): string | null => {
+export const verifyCookieSignature = (cookieValue: string, secret: string): string | null => {
   const separatorIndex = cookieValue.lastIndexOf(SIGNATURE_SEPARATOR);
   if (separatorIndex <= 0 || separatorIndex === cookieValue.length - 1) {
     return null;
@@ -136,13 +132,7 @@ export const verifyCookieSignature = (
  * @returns The cookie attribute string (excluding name=value).
  */
 const cookieAttributes = (maxAgeSeconds: number): string =>
-  [
-    `Max-Age=${maxAgeSeconds}`,
-    'Path=/',
-    'HttpOnly',
-    'SameSite=Lax',
-    'Secure',
-  ].join('; ');
+  [`Max-Age=${maxAgeSeconds}`, 'Path=/', 'HttpOnly', 'SameSite=Lax', 'Secure'].join('; ');
 
 /**
  * Creates a signed session cookie string suitable for use as a

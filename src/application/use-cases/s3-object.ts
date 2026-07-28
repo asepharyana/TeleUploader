@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { gzipSync } from 'node:zlib';
 import { nanoid } from 'nanoid';
-import type { File, NewFile } from '../../domain/entities/file';
+import type { File } from '../../domain/entities/file';
 import type { NewFilePart } from '../../domain/entities/file-part';
 import type { MultipartPart } from '../../domain/entities/multipart';
 import type { IBucketRepository } from '../../domain/ports/bucket-repository';
@@ -9,7 +9,7 @@ import type { IFilePartRepository } from '../../domain/ports/file-part-repositor
 import type { IFileRepository, S3FileRecord } from '../../domain/ports/file-repository';
 import type { IMultipartRepository } from '../../domain/ports/multipart-repository';
 import type { ITelegramService, TelegramFileInfo } from '../../domain/ports/telegram-service';
-import { ensureExtension, computeHash, formatCreatedAt } from '../../shared/utils/file';
+import { computeHash, ensureExtension, formatCreatedAt } from '../../shared/utils/file';
 
 // ─── Types ──────────────────────────────────────────────────────────
 
@@ -456,7 +456,12 @@ export function createPutObjectUseCase(deps: S3ObjectDeps) {
     );
 
     const partFileNamePrefix = `s3-${bucket.name}-${key.replace(/\//g, '_')}`;
-    const { telegramChunkSizeBytes, compressChunkedUploads, chunkCompressionMinSizeBytes, storageChatId } = deps.config;
+    const {
+      telegramChunkSizeBytes,
+      compressChunkedUploads,
+      chunkCompressionMinSizeBytes,
+      storageChatId,
+    } = deps.config;
 
     if (body.byteLength > telegramChunkSizeBytes) {
       // Chunked upload path
@@ -594,16 +599,28 @@ export function createCopyObjectUseCase(deps: S3ObjectDeps) {
     if (!sourceFile) return null;
 
     if (sourceFile.storageBackend === 'chunked') {
-      throw new ObjectError('NotImplemented', 'Copying chunked objects is not yet implemented.', 501);
+      throw new ObjectError(
+        'NotImplemented',
+        'Copying chunked objects is not yet implemented.',
+        501,
+      );
     }
 
     // Conditional copy: if-match / if-none-match checks
     const sourceEtag = sourceFile.fileHash;
     if (input.ifMatch && sourceEtag && input.ifMatch !== sourceEtag) {
-      throw new ObjectError('PreconditionFailed', 'The preconditions you specified did not hold.', 412);
+      throw new ObjectError(
+        'PreconditionFailed',
+        'The preconditions you specified did not hold.',
+        412,
+      );
     }
     if (input.ifNoneMatch && sourceEtag && input.ifNoneMatch === sourceEtag) {
-      throw new ObjectError('PreconditionFailed', 'The preconditions you specified did not hold.', 412);
+      throw new ObjectError(
+        'PreconditionFailed',
+        'The preconditions you specified did not hold.',
+        412,
+      );
     }
 
     const publicId = nanoid();

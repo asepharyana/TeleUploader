@@ -1,12 +1,12 @@
 import { serve } from 'bun';
 import { config } from './config/index';
+import { fileInfoCache } from './infrastructure/cache/index';
 import { startBot } from './interfaces/bot/handler';
+import { handleS3Request } from './interfaces/http/controllers/s3-controller';
+import { cleanupRateLimitCache } from './interfaces/http/middleware/rate-limit';
 import { routes } from './interfaces/http/routes/index';
 import { isS3Request } from './interfaces/s3/auth';
-import { handleS3Request } from './interfaces/http/controllers/s3-controller';
 import { extractS3BucketFromHost } from './interfaces/s3/virtual-host';
-import { fileInfoCache } from './infrastructure/cache/index';
-import { cleanupRateLimitCache } from './interfaces/http/middleware/rate-limit';
 import { logger } from './shared/logger/index';
 import { metricsCollector } from './shared/metrics/index';
 
@@ -30,7 +30,7 @@ const shouldHandleS3 = (req: Request, headers: Record<string, string>): boolean 
   );
 };
 
-const handleMaybeS3Root = (req: Request): Response | Promise<Response> => {
+const _handleMaybeS3Root = (req: Request): Response | Promise<Response> => {
   if (req.method === 'OPTIONS') {
     return handleS3Request(req, getS3RouteBucket(req));
   }

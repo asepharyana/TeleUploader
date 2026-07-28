@@ -1,10 +1,9 @@
 import { createReadStream } from 'node:fs';
 import { nanoid } from 'nanoid';
-import { config } from '../../../config/index';
 import { fileInfoCache } from '../../../infrastructure/cache/index';
-import { createChunkedObjectResponse } from '../../../utils/chunked-storage';
-import { cleanupTempFile, formatCreatedAt, getErrorMessage } from '../../../shared/utils/file';
 import logger from '../../../shared/logger/index';
+import { cleanupTempFile, formatCreatedAt, getErrorMessage } from '../../../shared/utils/file';
+import { createChunkedObjectResponse } from '../../../utils/chunked-storage';
 import { getFileInfo, type TelegramFileInfo } from '../../../utils/telegram';
 import { locateZipEntry } from '../../../utils/zip';
 
@@ -25,7 +24,7 @@ type RequestWithParams = Request & {
  * @param value - The string value to wrap.
  * @returns The value as a single-element tuple.
  */
-const asArray = (value: string): string[] => [value];
+const _asArray = (value: string): string[] => [value];
 
 /**
  * Resolves Telegram file metadata for a given file ID, using the in-memory
@@ -35,7 +34,10 @@ const asArray = (value: string): string[] => [value];
  * @param publicId - The public file ID (used for logging).
  * @returns The resolved Telegram file info.
  */
-const getTelegramFileInfo = async (telegramFileId: string, publicId: string): Promise<TelegramFileInfo> => {
+const getTelegramFileInfo = async (
+  telegramFileId: string,
+  publicId: string,
+): Promise<TelegramFileInfo> => {
   const cacheKey = `file_info_${telegramFileId}`;
   const cached = fileInfoCache.get(cacheKey) as TelegramFileInfo | null;
 

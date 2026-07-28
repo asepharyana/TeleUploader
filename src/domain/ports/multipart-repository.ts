@@ -1,4 +1,4 @@
-import type { MultipartUpload, MultipartPart } from '../entities/multipart';
+import type { MultipartPart, MultipartUpload } from '../entities/multipart';
 
 /**
  * Repository interface for S3 multipart upload persistence.

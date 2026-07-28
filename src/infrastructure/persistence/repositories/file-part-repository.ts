@@ -1,7 +1,7 @@
 import { sql } from 'drizzle-orm';
-import { db } from '../drizzle/index';
 import type { FilePart, NewFilePart } from '../../../domain/entities/file-part';
 import type { IFilePartRepository } from '../../../domain/ports/file-part-repository';
+import { db } from '../drizzle/index';
 
 /** Compression algorithm type matching the domain entity. */
 type CompressionAlgorithm = 'gzip' | null;
@@ -23,8 +23,7 @@ const mapRowToFilePart = (row: Record<string, unknown>): FilePart => ({
   storageMessageId: toNumber(row.storage_message_id),
   sizeBytes: toNumber(row.size_bytes),
   storedSizeBytes: toNumber(row.stored_size_bytes),
-  compressionAlgorithm:
-    (row.compression_algorithm as CompressionAlgorithm) || null,
+  compressionAlgorithm: (row.compression_algorithm as CompressionAlgorithm) || null,
   etag: row.etag as string,
   createdAt: new Date(row.created_at as string),
 });

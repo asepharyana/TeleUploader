@@ -98,11 +98,7 @@ export function createGetBucketUseCase(deps: ManageBucketDeps) {
 export function createCreateBucketUseCase(deps: ManageBucketDeps) {
   return async (name: string): Promise<Bucket> => {
     if (!BUCKET_NAME_REGEX.test(name)) {
-      throw new BucketError(
-        'InvalidBucketName',
-        'The specified bucket is not valid.',
-        400,
-      );
+      throw new BucketError('InvalidBucketName', 'The specified bucket is not valid.', 400);
     }
 
     const existing = await deps.bucketRepo.findByName(name);
@@ -134,20 +130,12 @@ export function createDeleteBucketUseCase(deps: ManageBucketDeps) {
   return async (name: string): Promise<boolean> => {
     const bucket = await deps.bucketRepo.findByName(name);
     if (!bucket) {
-      throw new BucketError(
-        'NoSuchBucket',
-        'The specified bucket does not exist.',
-        404,
-      );
+      throw new BucketError('NoSuchBucket', 'The specified bucket does not exist.', 404);
     }
 
     const objectCount = await deps.fileRepo.countByBucket(bucket.id);
     if (objectCount > 0) {
-      throw new BucketError(
-        'BucketNotEmpty',
-        'The bucket you tried to delete is not empty.',
-        409,
-      );
+      throw new BucketError('BucketNotEmpty', 'The bucket you tried to delete is not empty.', 409);
     }
 
     return deps.bucketRepo.delete(name);

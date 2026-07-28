@@ -1,15 +1,19 @@
 import { Telegraf } from 'telegraf';
+import type {
+  ForwardResult,
+  ITelegramService,
+  TelegramFileInfo,
+} from '../../domain/ports/telegram-service';
 import { config } from '../../env';
 import logger from '../../shared/logger/index';
-import type { ITelegramService, ForwardResult, TelegramFileInfo } from '../../domain/ports/telegram-service';
-import { enqueueUpload } from './upload-queue';
 import {
-  sendMethodMap,
-  extractUploadedFile,
   buildSendPayload,
-  type TelegramMessageResult,
+  extractUploadedFile,
   type SendMethod,
+  sendMethodMap,
+  type TelegramMessageResult,
 } from './types';
+import { enqueueUpload } from './upload-queue';
 
 /**
  * Sleep for a given number of seconds.
@@ -94,10 +98,9 @@ export class BotPool implements ITelegramService {
 
         if (retries > 0) {
           const seconds = parseInt(match[1], 10);
-          logger.warn(
-            `All bots in the pool are rate-limited. Sleeping for ${seconds} seconds...`,
-            { error: errorStr },
-          );
+          logger.warn(`All bots in the pool are rate-limited. Sleeping for ${seconds} seconds...`, {
+            error: errorStr,
+          });
           await sleep(seconds);
           return this.executeWithBotRetry(action, retries - 1, 0);
         }

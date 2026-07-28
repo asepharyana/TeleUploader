@@ -39,11 +39,7 @@ export interface ITelegramService {
    * @param fileType - The file type classification (e.g. "photo", "document").
    * @returns The Telegram identifiers of the stored file.
    */
-  forwardToStorage(
-    fileChunk: unknown,
-    fileName: string,
-    fileType: string,
-  ): Promise<ForwardResult>;
+  forwardToStorage(fileChunk: unknown, fileName: string, fileType: string): Promise<ForwardResult>;
 
   /**
    * Retrieve file metadata from Telegram by file ID.

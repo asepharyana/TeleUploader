@@ -1,10 +1,7 @@
 import { and, eq, sql } from 'drizzle-orm';
-import { db, files as fileSchema } from '../drizzle/index';
 import type { File, NewFile } from '../../../domain/entities/file';
-import type {
-  IFileRepository,
-  S3FileRecord,
-} from '../../../domain/ports/file-repository';
+import type { IFileRepository, S3FileRecord } from '../../../domain/ports/file-repository';
+import { db, files as fileSchema } from '../drizzle/index';
 
 /** Safely converts a raw value to a number, defaulting to 0. */
 const toNumber = (value: unknown): number => Number(value ?? 0);
@@ -35,25 +32,18 @@ const mapDbRowToS3Record = (row: Record<string, unknown>): S3FileRecord => ({
   fileHash: row.file_hash as string | null,
   archiveTelegramFileId: row.archive_telegram_file_id as string | null,
   archiveStorageMessageId:
-    row.archive_storage_message_id === null
-      ? null
-      : toNumber(row.archive_storage_message_id),
+    row.archive_storage_message_id === null ? null : toNumber(row.archive_storage_message_id),
   archiveFileName: row.archive_file_name as string | null,
   archiveEntryName: row.archive_entry_name as string | null,
   archiveMimeType: row.archive_mime_type as string | null,
-  archiveSizeBytes:
-    row.archive_size_bytes === null
-      ? null
-      : toNumber(row.archive_size_bytes),
+  archiveSizeBytes: row.archive_size_bytes === null ? null : toNumber(row.archive_size_bytes),
   bucketId: row.bucket_id as string,
   s3Key: row.s3_key as string,
   storageBackend: (row.storage_backend as string) || 'telegram',
   isDeleted: row.is_deleted as boolean,
   multipartUploadId: row.multipart_upload_id as string | null,
   partCount:
-    row.part_count === null || row.part_count === undefined
-      ? null
-      : toNumber(row.part_count),
+    row.part_count === null || row.part_count === undefined ? null : toNumber(row.part_count),
   createdAt: new Date(row.created_at as string),
   updatedAt: new Date(row.updated_at as string),
 });
@@ -69,11 +59,7 @@ export class DrizzleFileRepository implements IFileRepository {
    * {@inheritDoc IFileRepository.findByHash}
    */
   async findByHash(hash: string): Promise<File | null> {
-    const result = await db
-      .select()
-      .from(fileSchema)
-      .where(eq(fileSchema.fileHash, hash))
-      .limit(1);
+    const result = await db.select().from(fileSchema).where(eq(fileSchema.fileHash, hash)).limit(1);
     return result[0] || null;
   }
 
@@ -104,10 +90,7 @@ export class DrizzleFileRepository implements IFileRepository {
   /**
    * {@inheritDoc IFileRepository.findByBucketAndKey}
    */
-  async findByBucketAndKey(
-    bucketId: string,
-    s3Key: string,
-  ): Promise<File | null> {
+  async findByBucketAndKey(bucketId: string, s3Key: string): Promise<File | null> {
     const result = await db
       .select()
       .from(fileSchema)
@@ -126,10 +109,7 @@ export class DrizzleFileRepository implements IFileRepository {
    * {@inheritDoc IFileRepository.create}
    */
   async create(file: NewFile): Promise<File> {
-    const result = await db
-      .insert(fileSchema)
-      .values(file)
-      .returning();
+    const result = await db.insert(fileSchema).values(file).returning();
     return result[0]!;
   }
 
@@ -153,9 +133,7 @@ export class DrizzleFileRepository implements IFileRepository {
 
     query = sql`${query} ORDER BY s3_key LIMIT ${maxKeys + 1}`;
 
-    const rawResult = (await db.execute(
-      query,
-    )) as unknown as Record<string, unknown>[];
+    const rawResult = (await db.execute(query)) as unknown as Record<string, unknown>[];
 
     if (delimiter === '/') {
       const prefixSet = new Set<string>();
@@ -166,8 +144,7 @@ export class DrizzleFileRepository implements IFileRepository {
         const relativeKey = s3Key.substring(prefix.length);
         const slashIndex = relativeKey.indexOf('/');
         if (slashIndex >= 0) {
-          const folderPrefix =
-            prefix + relativeKey.substring(0, slashIndex + 1);
+          const folderPrefix = prefix + relativeKey.substring(0, slashIndex + 1);
           if (folderPrefix !== prefix) {
             prefixSet.add(folderPrefix);
           }
@@ -201,10 +178,7 @@ export class DrizzleFileRepository implements IFileRepository {
   /**
    * {@inheritDoc IFileRepository.softDeleteBatch}
    */
-  async softDeleteBatch(
-    bucketId: string,
-    keys: string[],
-  ): Promise<number> {
+  async softDeleteBatch(bucketId: string, keys: string[]): Promise<number> {
     let deleted = 0;
     for (const key of keys) {
       const ok = await this.softDelete(bucketId, key);
@@ -230,12 +204,7 @@ export class DrizzleFileRepository implements IFileRepository {
     return await db
       .select()
       .from(fileSchema)
-      .where(
-        and(
-          eq(fileSchema.bucketId, bucketId),
-          eq(fileSchema.isDeleted, true),
-        ),
-      )
+      .where(and(eq(fileSchema.bucketId, bucketId), eq(fileSchema.isDeleted, true)))
       .limit(100);
   }
 }

@@ -1,7 +1,7 @@
 import { sql } from 'drizzle-orm';
-import { db } from '../drizzle/index';
 import type { Bucket } from '../../../domain/entities/bucket';
 import type { IBucketRepository } from '../../../domain/ports/bucket-repository';
+import { db } from '../drizzle/index';
 
 /** Raw result row from `db.execute()`. */
 type QueryRow = Record<string, unknown>;

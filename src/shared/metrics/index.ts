@@ -1,1 +1,1 @@
-export { metricsCollector, MetricsCollector } from '../../utils/metrics';
+export { MetricsCollector, metricsCollector } from '../../utils/metrics';

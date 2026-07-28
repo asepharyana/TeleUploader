@@ -1,7 +1,7 @@
 import postgres from 'postgres';
 import { config } from '../../../env';
-import { getErrorMessage } from '../../../shared/utils/file';
 import logger from '../../../shared/logger/index';
+import { getErrorMessage } from '../../../shared/utils/file';
 
 /**
  * Run raw SQL migration from schema.sql.
@@ -15,10 +15,10 @@ export const runMigration = async (): Promise<void> => {
   const dir = import.meta.dir || '';
   const candidates = [
     `${dir}/../../../../schema.sql`, // from dist/
-    `${dir}/../../../schema.sql`,    // from src/infrastructure/persistence/
-    `${dir}/../../schema.sql`,       // from src/infrastructure/
-    `${dir}/../schema.sql`,          // from src/infrastructure/persistence/drizzle/
-    `${dir}/schema.sql`,             // from next to file (bun run directly)
+    `${dir}/../../../schema.sql`, // from src/infrastructure/persistence/
+    `${dir}/../../schema.sql`, // from src/infrastructure/
+    `${dir}/../schema.sql`, // from src/infrastructure/persistence/drizzle/
+    `${dir}/schema.sql`, // from next to file (bun run directly)
   ];
 
   let schemaSql: string | null = null;

@@ -1,14 +1,14 @@
 import { randomUUID } from 'node:crypto';
-import { open } from 'node:fs/promises';
 import { createReadStream } from 'node:fs';
+import { open } from 'node:fs/promises';
 import { gzipSync } from 'node:zlib';
 import { nanoid } from 'nanoid';
 import type { NewFilePart } from '../../domain/entities/file-part';
 import type { IFilePartRepository } from '../../domain/ports/file-part-repository';
 import type { IFileRepository } from '../../domain/ports/file-repository';
 import type { ITelegramService } from '../../domain/ports/telegram-service';
+import { checkFileSize, computeHash, ensureExtension, getFileType } from '../../shared/utils/file';
 import type { UploadInput, UploadOutput } from '../dto/upload';
-import { getFileType, checkFileSize, ensureExtension, computeHash, formatCreatedAt } from '../../shared/utils/file';
 
 /** Compression algorithm string literal used in chunked storage. */
 type ChunkCompressionAlgorithm = 'gzip' | null;
@@ -219,7 +219,8 @@ export function createUploadFileUseCase(deps: UploadFileUseCaseDeps) {
         mimeType: existing.mimeType,
         sizeBytes: existing.sizeBytes,
         fileType: existing.fileType,
-        createdAt: existing.createdAt instanceof Date ? existing.createdAt : new Date(existing.createdAt),
+        createdAt:
+          existing.createdAt instanceof Date ? existing.createdAt : new Date(existing.createdAt),
         downloadUrl: `${deps.config.baseUrl}/f/${existing.publicId}`,
       };
     }

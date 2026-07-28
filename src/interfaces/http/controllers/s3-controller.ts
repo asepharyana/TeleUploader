@@ -1,11 +1,7 @@
 import { createReadStream } from 'node:fs';
 import { nanoid } from 'nanoid';
-import {
-  createBucket,
-  deleteBucket,
-  findBucketByName,
-  listBuckets,
-} from '../../../db/buckets';
+import { config } from '../../../config/index';
+import { createBucket, deleteBucket, findBucketByName, listBuckets } from '../../../db/buckets';
 import {
   countBucketObjects,
   findFileByBucketAndKey,
@@ -22,18 +18,12 @@ import {
   listMultipartUploadsByBucket,
 } from '../../../db/multipart';
 import type { File } from '../../../db/schema';
-import { config } from '../../../config/index';
+import logger from '../../../shared/logger/index';
+import { cleanupTempFile, ensureExtension, getErrorMessage } from '../../../shared/utils/file';
 import {
   createChunkedObjectResponse,
   storeFileInTelegramChunks,
 } from '../../../utils/chunked-storage';
-import {
-  cleanupTempFile,
-  computeHash,
-  ensureExtension,
-  getErrorMessage,
-} from '../../../shared/utils/file';
-import logger from '../../../shared/logger/index';
 import { verifyPresignedUrl, verifySignature } from '../../../utils/s3/auth';
 import { S3_CORS_HEADERS, s3Headers } from '../../../utils/s3/headers';
 import { createGetObjectResponse, type ObjectPartSource } from '../../../utils/s3/object-stream';
@@ -700,7 +690,14 @@ const streamBodyToTemp = async (
   const tempPath = `/tmp/filedrop-s3-${nanoid()}`;
   const writer = Bun.file(tempPath).writer();
   const hasher = new Bun.CryptoHasher('sha256');
-  const reader = (body ?? new ReadableStream({ start(c) { c.close() } })).getReader();
+  const reader = (
+    body ??
+    new ReadableStream({
+      start(c) {
+        c.close();
+      },
+    })
+  ).getReader();
   const SIGNATURE_BYTES = 16;
   const signatureChunks: Buffer[] = [];
   let signatureBytes = 0;
@@ -1273,7 +1270,14 @@ const handleUploadPart = async (
   // Stream the part body to temp — O(1) memory, safe for large parts
   const tempPath = `/tmp/filedrop-mp-${nanoid()}`;
   const writer = Bun.file(tempPath).writer();
-  const reader = (req.body ?? new ReadableStream({ start(c) { c.close() } })).getReader();
+  const reader = (
+    req.body ??
+    new ReadableStream({
+      start(c) {
+        c.close();
+      },
+    })
+  ).getReader();
   const hasher = new Bun.CryptoHasher('sha256');
   let sizeBytes = 0;
 

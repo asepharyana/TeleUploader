@@ -7,7 +7,7 @@
  * - Concurrent operation safety
  */
 
-import { describe, expect, it, mock } from 'bun:test';
+import { describe, expect, it } from 'bun:test';
 import { nanoid } from 'nanoid';
 
 // ─── streamBodyToTemp tests ──────────────────────────────────────
@@ -19,7 +19,7 @@ describe('S3 Streaming Upload Safety', () => {
    */
   it('streams body to temp file without buffering entire body', async () => {
     // Import the S3 controller module
-    const mod = await import('../src/interfaces/http/controllers/s3-controller.ts');
+    const _mod = await import('../src/interfaces/http/controllers/s3-controller.ts');
 
     // Create a ReadableStream with known content
     const content = 'Hello, Docker Registry! This is a test blob.';
@@ -144,9 +144,7 @@ describe('S3 Streaming Upload Safety', () => {
    * by checking the module source code.
    */
   it('uses streaming instead of req.arrayBuffer() for PUT body', async () => {
-    const source = await Bun.file(
-      'src/interfaces/http/controllers/s3-controller.ts',
-    ).text();
+    const source = await Bun.file('src/interfaces/http/controllers/s3-controller.ts').text();
 
     const codeLines = source.split('\n').filter((l) => !l.trim().startsWith('*'));
     const codeText = codeLines.join('\n');
@@ -157,7 +155,8 @@ describe('S3 Streaming Upload Safety', () => {
 
     // handlePutObject should NOT contain req.arrayBuffer()
     // (note: comments that mention arrayBuffer are filtered out)
-    const putObjectCode = codeText.split('handlePutObject =')[1]?.split('storeFileFromTemp =')[0] || '';
+    const putObjectCode =
+      codeText.split('handlePutObject =')[1]?.split('storeFileFromTemp =')[0] || '';
     expect(putObjectCode).not.toMatch(/req\.arrayBuffer\(\)/);
     expect(putObjectCode).toContain('streamBodyToTemp');
   });
@@ -171,12 +170,13 @@ describe('S3 UploadPart Streaming', () => {
    * req.arrayBuffer().
    */
   it('streams part body instead of req.arrayBuffer()', async () => {
-    const source = await Bun.file(
-      'src/interfaces/http/controllers/s3-controller.ts',
-    ).text();
+    const source = await Bun.file('src/interfaces/http/controllers/s3-controller.ts').text();
 
     // Find the handleUploadPart function
-    const uploadPartSection = source.split('const handleUploadPart =')[1]?.split('const handleCompleteMultipartUpload =')[0] || '';
+    const uploadPartSection =
+      source
+        .split('const handleUploadPart =')[1]
+        ?.split('const handleCompleteMultipartUpload =')[0] || '';
     expect(uploadPartSection).not.toContain('arrayBuffer');
     expect(uploadPartSection).toContain('getReader');
     expect(uploadPartSection).toContain('Bun.file(tempPath).writer()');
@@ -306,9 +306,7 @@ describe('S3 Edge Cases', () => {
     expect(totalBytes).toBe(0);
     const fileSize = Bun.file(tempPath).size;
     expect(fileSize).toBe(0);
-    expect(hasher.digest('hex')).toBe(
-      new Bun.CryptoHasher('sha256').update('').digest('hex'),
-    );
+    expect(hasher.digest('hex')).toBe(new Bun.CryptoHasher('sha256').update('').digest('hex'));
 
     await Bun.write(tempPath, '');
   });

@@ -1,17 +1,17 @@
+import {
+  type AuthSession,
+  createLoginUseCase,
+  createLogoutUseCase,
+  createMeUseCase,
+} from '../../../application/use-cases/authenticate';
 import { config } from '../../../config/index';
 import {
+  checkBearerToken,
   clearSessionCookie,
   createSessionCookie,
   getAuthSession,
   isAuthEnabled,
-  checkBearerToken,
 } from '../../../utils/auth';
-import {
-  createLoginUseCase,
-  createLogoutUseCase,
-  createMeUseCase,
-  type AuthSession,
-} from '../../../application/use-cases/authenticate';
 
 /**
  * Helper that builds a JSON Response with optional extra headers.

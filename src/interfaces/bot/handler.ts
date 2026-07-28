@@ -1,11 +1,12 @@
 import { nanoid } from 'nanoid';
 import { type Context, Telegraf } from 'telegraf';
-import { config } from '../../env';
 import type { NewFile } from '../../domain/entities/file';
 import type { IFileRepository } from '../../domain/ports/file-repository';
 import type { ITelegramService } from '../../domain/ports/telegram-service';
+import { config } from '../../env';
 import { DrizzleFileRepository } from '../../infrastructure/persistence/repositories/file-repository';
 import { botPool } from '../../infrastructure/telegram/bot-pool';
+import logger from '../../shared/logger/index';
 import {
   detectFileType,
   extractFileFromMessage,
@@ -13,7 +14,6 @@ import {
   getFileSizeLimit,
   type TelegramMediaMessage,
 } from '../../shared/utils/file';
-import logger from '../../shared/logger/index';
 
 /**
  * Minimal bot context shape used by the media event handler.

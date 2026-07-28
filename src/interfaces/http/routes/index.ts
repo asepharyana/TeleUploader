@@ -1,16 +1,16 @@
 import { config } from '../../../config/index';
+import { handleSwaggerHtml, handleSwaggerJson } from '../../../routes/swagger';
+import { extractS3BucketFromHost } from '../../../utils/s3/virtual-host';
+import { isS3Request } from '../../s3/auth';
 import { handleLogin, handleLogout, handleMe } from '../controllers/auth-controller';
-import { handleFileRedirect, handleFileInfo } from '../controllers/file-controller';
+import { handleFileInfo, handleFileRedirect } from '../controllers/file-controller';
 import { handleHealth } from '../controllers/health-controller';
 import { handleHome } from '../controllers/home-controller';
 import { handleS3Request } from '../controllers/s3-controller';
-import { handleSwaggerHtml, handleSwaggerJson } from '../../../routes/swagger';
 import { handleUpload } from '../controllers/upload-controller';
 import { handleWebApiV1 } from '../controllers/web-api-controller';
 import { requireAuth } from '../middleware/auth';
 import { withRateLimit } from '../middleware/rate-limit';
-import { isS3Request } from '../../s3/auth';
-import { extractS3BucketFromHost } from '../../../utils/s3/virtual-host';
 
 /**
  * Extracts the S3 bucket name from the request host
@@ -47,7 +47,7 @@ const shouldHandleS3 = (req: Request, headers: Record<string, string>): boolean 
  * @param req - The incoming HTTP request.
  * @returns A Response from the S3 handler or a 405 response.
  */
-const handleMaybeS3Root = (req: Request): Response | Promise<Response> => {
+const _handleMaybeS3Root = (req: Request): Response | Promise<Response> => {
   if (req.method === 'OPTIONS') {
     return handleS3Request(req, getS3RouteBucket(req));
   }

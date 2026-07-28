@@ -26,23 +26,40 @@ export class Cache<T> {
     return entry.value;
   }
 
-  has(key: string): boolean { return this.get(key) !== null; }
-  delete(key: string): void { this.store.delete(key); }
-  clear(): void { this.store.clear(); }
-  size(): number { return this.store.size; }
+  has(key: string): boolean {
+    return this.get(key) !== null;
+  }
+  delete(key: string): void {
+    this.store.delete(key);
+  }
+  clear(): void {
+    this.store.clear();
+  }
+  size(): number {
+    return this.store.size;
+  }
 
   cleanup(): number {
     let removed = 0;
     const now = Date.now();
     for (const [key, entry] of this.store.entries()) {
-      if (now > entry.expiresAt) { this.store.delete(key); removed++; }
+      if (now > entry.expiresAt) {
+        this.store.delete(key);
+        removed++;
+      }
     }
     return removed;
   }
 }
 
-interface CacheEntry<T> { value: T; expiresAt: number }
+interface CacheEntry<T> {
+  value: T;
+  expiresAt: number;
+}
 
 export const fileInfoCache = new Cache<{
-  file_size: number; mime_type: string; file_path: string; bot_token: string;
+  file_size: number;
+  mime_type: string;
+  file_path: string;
+  bot_token: string;
 }>(3600);

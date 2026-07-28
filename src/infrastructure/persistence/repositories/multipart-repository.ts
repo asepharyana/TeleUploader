@@ -1,15 +1,13 @@
 import { sql } from 'drizzle-orm';
 import { nanoid } from 'nanoid';
-import { db } from '../drizzle/index';
-import type { MultipartUpload, MultipartPart } from '../../../domain/entities/multipart';
+import type { MultipartPart, MultipartUpload } from '../../../domain/entities/multipart';
 import type { IMultipartRepository } from '../../../domain/ports/multipart-repository';
+import { db } from '../drizzle/index';
 
 /**
  * Maps a raw database row to a {@link MultipartUpload} domain entity.
  */
-const mapRowToMultipartUpload = (
-  r: Record<string, unknown>,
-): MultipartUpload => ({
+const mapRowToMultipartUpload = (r: Record<string, unknown>): MultipartUpload => ({
   uploadId: r.upload_id as string,
   bucketId: r.bucket_id as string,
   s3Key: r.s3_key as string,
@@ -29,11 +27,7 @@ export class DrizzleMultipartRepository implements IMultipartRepository {
   /**
    * {@inheritDoc IMultipartRepository.create}
    */
-  async create(
-    bucketId: string,
-    s3Key: string,
-    initiatedBy: string,
-  ): Promise<string> {
+  async create(bucketId: string, s3Key: string, initiatedBy: string): Promise<string> {
     const uploadId = nanoid(32);
     await db.execute(
       sql`INSERT INTO multipart_uploads (upload_id, bucket_id, s3_key, initiated_by) VALUES (${uploadId}, ${bucketId}, ${s3Key}, ${initiatedBy})`,
@@ -81,9 +75,7 @@ export class DrizzleMultipartRepository implements IMultipartRepository {
   /**
    * {@inheritDoc IMultipartRepository.insertPart}
    */
-  async insertPart(
-    part: Omit<MultipartPart, 'id' | 'createdAt'>,
-  ): Promise<void> {
+  async insertPart(part: Omit<MultipartPart, 'id' | 'createdAt'>): Promise<void> {
     await db.execute(
       sql`INSERT INTO multipart_parts (upload_id, part_number, telegram_file_id, telegram_file_unique_id, storage_message_id, size_bytes, etag)
           VALUES (${part.uploadId}, ${part.partNumber}, ${part.telegramFileId}, ${part.telegramFileUniqueId}, ${part.storageMessageId}, ${part.sizeBytes}, ${part.etag})`,
@@ -142,8 +134,7 @@ export class DrizzleMultipartRepository implements IMultipartRepository {
     return {
       uploads,
       isTruncated: result.length > limit,
-      nextKeyMarker:
-        result.length > limit ? uploads.at(-1)?.s3Key || null : null,
+      nextKeyMarker: result.length > limit ? uploads.at(-1)?.s3Key || null : null,
     };
   }
 }

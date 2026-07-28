@@ -1,5 +1,11 @@
 import { timingSafeEqual } from 'node:crypto';
-import type { LoginInput, LoginResponse, LogoutResponse, UserInfoResponse, AuthSession } from '../dto/auth';
+import type {
+  AuthSession,
+  LoginInput,
+  LoginResponse,
+  LogoutResponse,
+  UserInfoResponse,
+} from '../dto/auth';
 
 /** Subset of application configuration consumed by the authenticate use case. */
 export interface AuthUseCaseConfig {

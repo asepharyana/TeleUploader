@@ -1,15 +1,15 @@
 import { createReadStream } from 'node:fs';
 import { gzipSync } from 'node:zlib';
 import { nanoid } from 'nanoid';
+import type { File as FileEntity } from '../../domain/entities/file';
+import type { CompressionAlgorithm, NewFilePart } from '../../domain/entities/file-part';
+import type { IFilePartRepository } from '../../domain/ports/file-part-repository';
+import type { IFileRepository } from '../../domain/ports/file-repository';
+import type { ITelegramService } from '../../domain/ports/telegram-service';
 import { config } from '../../env';
-import { computeHash } from '../../shared/utils/file';
 import { createGetObjectResponse, type ObjectPartSource } from '../../interfaces/s3/object-stream';
 import type { RangeParseResult } from '../../interfaces/s3/range';
-import type { IFileRepository } from '../../domain/ports/file-repository';
-import type { IFilePartRepository } from '../../domain/ports/file-part-repository';
-import type { ITelegramService } from '../../domain/ports/telegram-service';
-import type { File as FileEntity } from '../../domain/entities/file';
-import type { NewFilePart, CompressionAlgorithm } from '../../domain/entities/file-part';
+import { computeHash } from '../../shared/utils/file';
 
 /**
  * Chunk compression algorithm identifier.

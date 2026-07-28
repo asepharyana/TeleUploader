@@ -1,6 +1,9 @@
 import { createWriteStream } from 'node:fs';
 import { nanoid } from 'nanoid';
 import { config } from '../../../config/index';
+import { findFileByHash } from '../../../db/files';
+import logger from '../../../shared/logger/index';
+import { metricsCollector } from '../../../shared/metrics/index';
 import {
   buildUploadResponse,
   checkFileSize,
@@ -11,11 +14,8 @@ import {
   getErrorMessage,
   getFileType,
 } from '../../../shared/utils/file';
-import logger from '../../../shared/logger/index';
-import { metricsCollector } from '../../../shared/metrics/index';
-import { enqueuePreparedUpload, type PreparedUpload } from '../../../utils/uploadBatcher';
 import { storeFileInTelegramChunks } from '../../../utils/chunked-storage';
-import { findFileByHash } from '../../../db/files';
+import { enqueuePreparedUpload, type PreparedUpload } from '../../../utils/uploadBatcher';
 
 /**
  * Maximum allowed size (in bytes) for a base64 JSON upload.

@@ -1,11 +1,11 @@
 import { createReadStream } from 'node:fs';
 import { nanoid } from 'nanoid';
+import type { File as FileEntity, NewFile } from '../../domain/entities/file';
+import type { IFileRepository } from '../../domain/ports/file-repository';
+import type { ITelegramService } from '../../domain/ports/telegram-service';
 import { config } from '../../env';
 import { cleanupTempFile } from '../../shared/utils/file';
 import { createZip, type ZipEntry } from '../../shared/utils/zip';
-import type { IFileRepository } from '../../domain/ports/file-repository';
-import type { ITelegramService } from '../../domain/ports/telegram-service';
-import type { File as FileEntity, NewFile } from '../../domain/entities/file';
 
 /**
  * Metadata about a prepared upload before it is submitted to the batcher.

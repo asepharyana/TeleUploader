@@ -1,7 +1,5 @@
 import { timingSafeEqual } from 'node:crypto';
 
-import { timingSafeEqual } from 'node:crypto';
-
 /**
  * Timing-safe string comparison that prevents timing attacks.
  *
@@ -293,7 +291,10 @@ export const verifyPresignedUrl = async ({
   }
   // AWS S3 spec limits presigned URLs to 7 days (604800 seconds)
   const MAX_PRESIGNED_EXPIRY_SECONDS = 604800;
-  if (now.getTime() > signedAt.getTime() + expires * 1000 || expires > MAX_PRESIGNED_EXPIRY_SECONDS) {
+  if (
+    now.getTime() > signedAt.getTime() + expires * 1000 ||
+    expires > MAX_PRESIGNED_EXPIRY_SECONDS
+  ) {
     return { isValid: false, credential: null, errorCode: 'AccessDenied' };
   }
 
