@@ -1,0 +1,338 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>FileDrop · S3 File Manager</title>
+  <style>
+    :root {
+      --bg: #ffffff; --bg2: #f5f5f5; --text: #1a1a1a;
+      --text2: #666; --border: #e0e0e0; --accent: #2563eb;
+      --danger: #dc2626; --radius: 8px;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg: #0d1117; --bg2: #161b22; --text: #c9d1d9;
+        --text2: #8b949e; --border: #30363d; --accent: #58a6ff;
+        --danger: #f85149;
+      }
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: var(--bg); color: var(--text); line-height: 1.5;
+      min-height: 100vh;
+    }
+    .topbar {
+      display: flex; align-items: center; gap: 12px;
+      padding: 12px 24px; background: var(--bg2);
+      border-bottom: 1px solid var(--border);
+      position: sticky; top: 0; z-index: 50;
+    }
+    .topbar .logo { font-weight: 700; font-size: 1.1rem; }
+    .topbar select, .topbar button {
+      padding: 6px 12px; border: 1px solid var(--border);
+      border-radius: var(--radius); background: var(--bg);
+      color: var(--text); font-size: 0.875rem; cursor: pointer;
+    }
+    .modal input {
+      width: 100%; padding: 8px 12px; border: 1px solid var(--border);
+      border-radius: var(--radius); background: var(--bg);
+      color: var(--text); margin-bottom: 12px;
+    }
+    .topbar button.primary { background: var(--accent); color: #fff; border-color: var(--accent); }
+    .topbar .spacer { flex: 1; }
+    .topbar .search input {
+      padding: 6px 12px; border: 1px solid var(--border);
+      border-radius: var(--radius); background: var(--bg);
+      color: var(--text); font-size: 0.875rem; width: 200px;
+    }
+    .file-list { padding: 16px 24px; }
+    .breadcrumb {
+      padding: 8px 0; margin-bottom: 8px; font-size: 0.9rem;
+      color: var(--accent); cursor: pointer;
+    }
+    .breadcrumb span:hover { text-decoration: underline; }
+    .breadcrumb .sep { color: var(--text2); margin: 0 4px; }
+    .file-row {
+      display: flex; align-items: center; gap: 12px;
+      padding: 10px 12px; border-radius: var(--radius);
+      cursor: pointer; transition: background 0.1s;
+    }
+    .file-row:hover { background: var(--bg2); }
+    .file-row .icon { font-size: 1.2rem; width: 28px; text-align: center; flex-shrink: 0; }
+    .file-row .name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .file-row .size { width: 80px; text-align: right; color: var(--text2); font-size: 0.85rem; }
+    .file-row .date { width: 140px; color: var(--text2); font-size: 0.85rem; }
+    .file-row .actions { display: flex; gap: 4px; }
+    .file-row .actions button {
+      padding: 4px 8px; border: none; border-radius: 4px;
+      background: transparent; color: var(--text2); cursor: pointer; font-size: 0.8rem;
+    }
+    .file-row .actions button:hover { color: var(--text); background: var(--border); }
+    .dropzone {
+      position: fixed; bottom: 0; left: 0; right: 0;
+      padding: 12px 24px; background: var(--bg2);
+      border-top: 1px solid var(--border);
+      text-align: center; color: var(--text2); font-size: 0.85rem; cursor: pointer;
+    }
+    .dropzone.dragover { background: var(--accent); color: #fff; }
+    .progress-overlay {
+      position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+      background: rgba(0,0,0,0.5); display: flex;
+      align-items: center; justify-content: center; z-index: 100;
+    }
+    .progress-card {
+      background: var(--bg); padding: 24px; border-radius: var(--radius);
+      min-width: 300px; max-width: 500px;
+    }
+    .progress-bar {
+      height: 8px; background: var(--border); border-radius: 4px;
+      margin: 12px 0; overflow: hidden;
+    }
+    .progress-bar .fill {
+      height: 100%; background: var(--accent);
+      transition: width 0.2s; width: 0%;
+    }
+    .modal-overlay {
+      position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+      background: rgba(0,0,0,0.5); display: flex;
+      align-items: center; justify-content: center; z-index: 100;
+    }
+    .modal {
+      background: var(--bg); padding: 24px; border-radius: var(--radius);
+      min-width: 360px; max-width: 500px;
+    }
+    .modal h3 { margin-bottom: 16px; }
+    .modal .buttons { display: flex; gap: 8px; justify-content: flex-end; }
+    .modal .buttons button {
+      padding: 8px 16px; border: 1px solid var(--border);
+      border-radius: var(--radius); background: var(--bg); color: var(--text); cursor: pointer;
+    }
+    .modal .buttons .primary { background: var(--accent); color: #fff; border-color: var(--accent); }
+    .modal .buttons .danger { background: var(--danger); color: #fff; border-color: var(--danger); }
+    .empty { text-align: center; padding: 48px 24px; color: var(--text2); }
+    .empty h2 { font-size: 1.2rem; margin-bottom: 8px; }
+    .auth-screen {
+      position: fixed; inset: 0; z-index: 200; display: none;
+      align-items: center; justify-content: center; padding: 24px;
+      background: linear-gradient(135deg, var(--bg), var(--bg2));
+    }
+    .auth-card {
+      width: min(100%, 380px); padding: 28px; border: 1px solid var(--border);
+      border-radius: 16px; background: var(--bg); box-shadow: 0 20px 60px rgba(0,0,0,0.18);
+    }
+    .auth-card h1 { font-size: 1.45rem; margin-bottom: 8px; }
+    .auth-card p { color: var(--text2); margin-bottom: 18px; }
+    .auth-card input {
+      width: 100%; padding: 10px 12px; border: 1px solid var(--border);
+      border-radius: var(--radius); background: var(--bg2); color: var(--text);
+      margin-bottom: 12px;
+    }
+    .auth-card button {
+      width: 100%; padding: 10px 14px; border: 1px solid var(--accent);
+      border-radius: var(--radius); background: var(--accent); color: #fff;
+      cursor: pointer; font-weight: 600;
+    }
+    .auth-card button:disabled { opacity: 0.7; cursor: wait; }
+    .auth-error { color: var(--danger); font-size: 0.85rem; margin-bottom: 12px; }
+  </style>
+</head>
+<body>
+  <div id="authScreen" class="auth-screen">
+    <div class="auth-card">
+      <h1>📦 FileDrop</h1>
+      <p>Enter admin token to continue.</p>
+      <input id="authTokenInput" type="password" placeholder="Admin token" autocomplete="current-password">
+      <div id="authError" class="auth-error" style="display:none"></div>
+      <button id="authLoginBtn" type="button">Login</button>
+    </div>
+  </div>
+  <div class="topbar">
+    <span class="logo">📦 FileDrop</span>
+    <select id="bucketSelect" onchange="window.switchBucket(this.value)">
+      <option value="">— Select bucket —</option>
+    </select>
+    <button type="button" onclick="window.showCreateBucketModal()">+ New</button>
+    <button type="button" onclick="window.showCredentialsModal()" title="S3 Credentials">🔑</button>
+    <button id="logoutBtn" type="button" onclick="window.logout()" style="display:none">Logout</button>
+    <span class="spacer"></span>
+    <div class="search">
+      <input id="searchInput" type="text" placeholder="Filter prefix..." oninput="window.debouncedSearch()">
+    </div>
+  </div>
+  <div id="breadcrumb" class="breadcrumb" style="display:none;padding:8px 24px"></div>
+  <div id="fileList" class="file-list">
+    <div class="empty"><h2>Select a bucket to get started</h2><p>Choose a bucket from the dropdown above, or create a new one.</p></div>
+  </div>
+  <div id="dropzone" class="dropzone" style="display:none">📁 Drop files here or click to upload</div>
+  <div id="progressOverlay" class="progress-overlay" style="display:none">
+    <div class="progress-card">
+      <h3>Uploading...</h3>
+      <div id="progressFileName"></div>
+      <div class="progress-bar"><div id="progressFill" class="fill"></div></div>
+      <div id="progressPercent" style="font-size:0.85rem;color:var(--text2)">0%</div>
+    </div>
+  </div>
+  <div id="modalOverlay" class="modal-overlay" style="display:none" onclick="closeModal(event)">
+    <div id="modalContent" class="modal" onclick="event.stopPropagation()"></div>
+  </div>
+  <script>
+    let currentBucket = null, currentPrefix = '', currentObjects = [], currentPrefixes = [], allBuckets = [], searchTimer = null;
+    const setAuthError = (message) => {
+      const errorEl = document.getElementById('authError');
+      errorEl.textContent = message;
+      errorEl.style.display = message ? 'block' : 'none';
+    };
+    const showAuthScreen = () => {
+      document.getElementById('authScreen').style.display = 'flex';
+      document.getElementById('logoutBtn').style.display = 'none';
+      setTimeout(() => document.getElementById('authTokenInput')?.focus(), 50);
+    };
+    const hideAuthScreen = (showLogout) => {
+      document.getElementById('authScreen').style.display = 'none';
+      document.getElementById('logoutBtn').style.display = showLogout ? 'inline-block' : 'none';
+    };
+    const checkAuth = async () => {
+      try {
+        const res = await fetch('/api/v1/auth/me');
+        if (res.ok) { hideAuthScreen(true); return true; }
+        if (res.status === 401) { showAuthScreen(); return false; }
+        if (res.status === 404) { hideAuthScreen(false); return true; }
+        setAuthError('Unable to verify login status. Please try again.');
+        showAuthScreen(); return false;
+      } catch {
+        setAuthError('Network error while checking login status.');
+        showAuthScreen(); return false;
+      }
+    };
+    const handleLogin = async () => {
+      const input = document.getElementById('authTokenInput');
+      const btn = document.getElementById('authLoginBtn');
+      const token = input.value.trim();
+      if (!token) { setAuthError('Admin token is required.'); input.focus(); return; }
+      btn.disabled = true; btn.textContent = 'Logging in...'; setAuthError('');
+      try {
+        const res = await fetch('/api/v1/auth/login', {
+          method: 'POST', headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ token }),
+        });
+        if (res.ok) { hideAuthScreen(true); input.value = ''; await loadBuckets(); return; }
+        const body = await res.json().catch(() => ({ error: 'Login failed' }));
+        setAuthError(body.error || 'Login failed');
+      } catch {
+        setAuthError('Network error while logging in.');
+      } finally {
+        btn.disabled = false; btn.textContent = 'Login';
+      }
+    };
+    const logout = async () => {
+      await fetch('/api/v1/auth/logout', { method: 'POST' }).catch(() => {});
+      currentBucket = null; currentPrefix = ''; currentObjects = []; currentPrefixes = [];
+      document.getElementById('bucketSelect').innerHTML = '<option value="">— Select bucket —</option>';
+      document.getElementById('fileList').innerHTML = '<div class="empty"><h2>Logged out</h2><p>Enter the admin token to continue.</p></div>';
+      document.getElementById('dropzone').style.display = 'none';
+      showAuthScreen();
+    };
+    const api = async (path, opts = {}) => {
+      const res = await fetch(path, opts);
+      if (!res.ok) { const body = await res.json().catch(() => ({ error: res.statusText })); throw new Error(body.error || res.statusText); }
+      return res;
+    };
+    const apiJson = async (path, opts = {}) => { const res = await api(path, { headers: { 'content-type': 'application/json' }, ...opts }); return res.json(); };
+    const loadBuckets = async () => {
+      const data = await apiJson('/api/v1/buckets');
+      allBuckets = data.buckets || [];
+      const sel = document.getElementById('bucketSelect');
+      sel.innerHTML = `<option value="">— Select bucket —</option>${allBuckets.map(b => `<option value="${b.name}">${b.name} (${b.objectCount})</option>`).join('')}`;
+      if (currentBucket) sel.value = currentBucket;
+    };
+    const switchBucket = async (name) => {
+      currentBucket = name || null; currentPrefix = '';
+      if (name) { await loadObjects(); document.getElementById('dropzone').style.display = 'block'; }
+      else {
+        document.getElementById('fileList').innerHTML = '<div class="empty"><h2>Select a bucket</h2><p>Choose a bucket from the dropdown above.</p></div>';
+        document.getElementById('breadcrumb').style.display = 'none'; document.getElementById('dropzone').style.display = 'none';
+      }
+    };
+    const renderBreadcrumb = () => {
+      const bc = document.getElementById('breadcrumb');
+      if (!currentPrefix) { bc.style.display = 'none'; return; }
+      bc.style.display = 'block';
+      const parts = currentPrefix.split('/').filter(Boolean);
+      bc.innerHTML = `<span onclick="window.navigateTo('')">${currentBucket}</span>`;
+      let accumulated = '';
+      for (const part of parts) { accumulated += `${part}/`; bc.innerHTML += `<span class="sep">/</span><span onclick="window.navigateTo('${accumulated}')">${part}</span>`; }
+    };
+    const navigateTo = (prefix) => { currentPrefix = prefix; loadObjects(); };
+    const loadObjects = async () => {
+      if (!currentBucket) return;
+      const searchVal = document.getElementById('searchInput').value;
+      const prefix = searchVal || currentPrefix;
+      const url = `/api/v1/buckets/${encodeURIComponent(currentBucket)}/objects?prefix=${encodeURIComponent(prefix)}&delimiter=/&max-keys=200`;
+      try {
+        const data = await apiJson(url);
+        currentObjects = data.objects || []; currentPrefixes = data.prefixes || [];
+        renderFileList(); renderBreadcrumb();
+      } catch (e) { document.getElementById('fileList').innerHTML = `<div class="empty"><h2>Error</h2><p>${e.message}</p></div>`; }
+    };
+    const renderFileList = () => {
+      const container = document.getElementById('fileList');
+      if (currentPrefixes.length === 0 && currentObjects.length === 0) { container.innerHTML = '<div class="empty"><h2>This bucket is empty</h2><p>Drop files here to upload.</p></div>'; return; }
+      let html = '';
+      for (const prefix of currentPrefixes) {
+        const displayName = prefix.replace(currentPrefix, '');
+        html += `<div class="file-row" onclick="window.navigateTo('${prefix}')"><span class="icon">🗂</span><span class="name">${displayName.endsWith('/') ? displayName : `${displayName}/`}</span><span class="size">—</span><span class="date"></span><span class="actions"></span></div>`;
+      }
+      for (const obj of currentObjects) {
+        const displayName = obj.key.replace(currentPrefix, '');
+        html += `<div class="file-row"><span class="icon">📄</span><span class="name">${escapeHtml(displayName)}</span><span class="size">${formatSize(obj.sizeBytes)}</span><span class="date">${formatDate(obj.lastModified)}</span><span class="actions"><button onclick="event.stopPropagation();downloadObject('${obj.key}')" title="Download">⬇</button><button onclick="event.stopPropagation();copyLink('${obj.key}')" title="Copy link">🔗</button><button onclick="event.stopPropagation();deleteObject('${obj.key}')" title="Delete">🗑</button></span></div>`;
+      }
+      container.innerHTML = html;
+    };
+    const formatSize = (bytes) => { const size = Number(bytes); if (!Number.isFinite(size) || size <= 0) return '0 B'; const u = ['B','KB','MB','GB','TB']; let i=0,s=size; while(s>=1024&&i<u.length-1){s/=1024;i++} return `${s.toFixed(i>0?1:0)} ${u[i]}`; };
+    const formatDate = (iso) => { if(!iso)return ''; return new Date(iso).toLocaleDateString(undefined,{month:'short',day:'numeric',year:'numeric'}); };
+    const escapeHtml = (s) => { const d=document.createElement('div');d.textContent=s;return d.innerHTML; };
+    const debouncedSearch = () => { clearTimeout(searchTimer); searchTimer = setTimeout(loadObjects, 300); };
+    const downloadObject = async (key) => { window.open(`/api/v1/buckets/${encodeURIComponent(currentBucket)}/download/${encodeURIComponent(key)}`,'_blank'); };
+    const copyLink = (key) => { navigator.clipboard.writeText(`${window.location.origin}/api/v1/buckets/${encodeURIComponent(currentBucket)}/download/${encodeURIComponent(key)}`).catch(()=>{}); };
+    const deleteObject = async (key) => {
+      if(!confirm(`Delete "${key}"?`))return;
+      try{await api(`/api/v1/buckets/${encodeURIComponent(currentBucket)}/${encodeURIComponent(key)}`,{method:'DELETE'});await loadObjects();}
+      catch(e){alert(`Delete failed: ${e.message}`);}
+    };
+    const uploadFiles = async (files) => {
+      if(!currentBucket||files.length===0)return;
+      const overlay=document.getElementById('progressOverlay'), fill=document.getElementById('progressFill'), pn=document.getElementById('progressFileName'), pp=document.getElementById('progressPercent');
+      overlay.style.display='flex';
+      for(let i=0;i<files.length;i++){
+        const file=files[i]; pn.textContent=`${i+1}/${files.length}: ${file.name}`; fill.style.width='0%'; pp.textContent='0%';
+        await new Promise((resolve,reject)=>{
+          const fd=new FormData(); fd.append('file',file); fd.append('key',currentPrefix+file.name);
+          const xhr=new XMLHttpRequest();
+          xhr.upload.onprogress=(e)=>{if(e.lengthComputable){const p=Math.round((e.loaded/e.total)*100);fill.style.width=`${p}%`;pp.textContent=`${p}%`;}};
+          xhr.onload=()=>{if(xhr.status>=200&&xhr.status<300)resolve();else reject(new Error(xhr.statusText));};
+          xhr.onerror=()=>reject(new Error('Upload failed'));
+          xhr.open('POST',`/api/v1/buckets/${encodeURIComponent(currentBucket)}/upload`); xhr.send(fd);
+        });
+      }
+      overlay.style.display='none'; await loadObjects();
+    };
+    const dropzone=document.getElementById('dropzone');
+    dropzone.addEventListener('dragover',e=>{e.preventDefault();dropzone.classList.add('dragover');});
+    dropzone.addEventListener('dragleave',()=>dropzone.classList.remove('dragover'));
+    dropzone.addEventListener('drop',e=>{e.preventDefault();dropzone.classList.remove('dragover');if(e.dataTransfer.files.length>0)uploadFiles(e.dataTransfer.files);});
+    dropzone.addEventListener('click',()=>{const i=document.createElement('input');i.type='file';i.multiple=true;i.onchange=()=>{if(i.files.length>0)uploadFiles(i.files);};i.click();});
+    const showModal=(html)=>{document.getElementById('modalContent').innerHTML=html;document.getElementById('modalOverlay').style.display='flex';};
+    const closeModal=(e)=>{if(e&&e.target!==e.currentTarget)return;document.getElementById('modalOverlay').style.display='none';};
+    const showCreateBucketModal=()=>{showModal(`<h3>Create Bucket</h3><input id="bucketNameInput" type="text" placeholder="my-bucket-name" pattern="[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]"><p style="font-size:0.8rem;color:var(--text2);margin-bottom:12px">Lowercase, 3-63 chars, no underscores</p><div class="buttons"><button onclick="closeModal()">Cancel</button><button class="primary" onclick="createBucket()">Create</button></div>`);setTimeout(()=>document.getElementById('bucketNameInput')?.focus(),100);};
+    const createBucket=async()=>{const n=document.getElementById('bucketNameInput').value.trim();if(!n)return;try{await apiJson('/api/v1/buckets',{method:'POST',body:JSON.stringify({name:n})});closeModal();await loadBuckets();document.getElementById('bucketSelect').value=n;await switchBucket(n);}catch(e){alert(`Failed: ${e.message}`);}};
+    const showCredentialsModal=()=>{showModal(`<h3>S3 Credentials</h3><p style="margin-bottom:12px;font-size:0.85rem;color:var(--text2)">Use these in any S3 client (aws-cli, rclone, s3cmd, etc.)</p><label style="font-size:0.85rem;font-weight:600">Endpoint URL</label><input type="text" value="${window.location.origin}" readonly onclick="this.select()"><label style="font-size:0.85rem;font-weight:600">Region</label><input type="text" value="us-east-1" readonly onclick="this.select()"><label style="font-size:0.85rem;font-weight:600">Access Key</label><input id="s3AccessKey" type="text" readonly onclick="this.select()"><label style="font-size:0.85rem;font-weight:600">Secret Key</label><input id="s3SecretKey" type="password" readonly onclick="this.select()"><div class="buttons"><button type="button" onclick="window.closeModal()">Close</button></div>`);};
+    const init=async()=>{if(await checkAuth())await loadBuckets();};
+    document.getElementById('authLoginBtn').addEventListener('click',handleLogin);
+    document.getElementById('authTokenInput').addEventListener('keydown',e=>{if(e.key==='Enter')handleLogin();});
+    Object.assign(window, { switchBucket, navigateTo, debouncedSearch, downloadObject, copyLink, deleteObject, closeModal, showCreateBucketModal, createBucket, showCredentialsModal, logout });
+    init();
+  </script>
+</body>
+</html>

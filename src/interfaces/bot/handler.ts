@@ -13,7 +13,7 @@ import {
   getFileSizeLimit,
   type TelegramMediaMessage,
 } from '../../shared/utils/file';
-import logger from '../../utils/logger';
+import logger from '../../shared/logger/index';
 
 /**
  * Minimal bot context shape used by the media event handler.
