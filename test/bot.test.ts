@@ -1,5 +1,5 @@
 import { afterAll, beforeEach, describe, expect, it, mock, spyOn } from 'bun:test';
-import type { TelegramMediaMessage } from '../src/utils/file';
+import type { TelegramMediaMessage } from '../src/shared/utils/file';
 import logger from '../src/utils/logger';
 
 // Mock environment
@@ -46,61 +46,43 @@ mock.module('telegraf', () => ({
   Telegraf: MockTelegraf,
 }));
 
-// Mock database
-const mockInsert = mock(() => ({
-  values: mock(() => Promise.resolve()),
-}));
-type ExistingFile = {
-  publicId: string;
-  telegramFileId: string;
-  telegramFileUniqueId: string;
-};
-
-const mockFindFileByUniqueId = mock((): Promise<ExistingFile | null> => Promise.resolve(null));
-
-mock.module('../src/db/index', () => ({
-  db: {
-    insert: mockInsert,
-  },
-  files: {},
-}));
-
-mock.module('../src/db/files', () => ({
-  findFileByUniqueId: mockFindFileByUniqueId,
-}));
-
-// Mock forwardToStorage
-const mockForwardToStorage = mock(() =>
-  Promise.resolve({
-    telegramFileId: 'stored_file_id',
-    telegramFileUniqueId: 'stored_unique_id',
-    storageMessageId: 9999,
-  }),
-);
-mock.module('../src/utils/telegram', () => ({
-  forwardToStorage: mockForwardToStorage,
-}));
-
 const infoSpy = spyOn(logger, 'info');
 const errorSpy = spyOn(logger, 'error');
 
 describe('Telegram Bot Handler', () => {
+  let mockTelegramService: { forwardToStorage: ReturnType<typeof mock> };
+  let mockFileRepo: { findByUniqueId: ReturnType<typeof mock>; create: ReturnType<typeof mock> };
+
   beforeEach(() => {
     mockLaunch.mockClear();
     mockCommand.mockClear();
     mockOn.mockClear();
     mockUse.mockClear();
-    mockInsert.mockClear();
-    mockFindFileByUniqueId.mockClear();
-    mockFindFileByUniqueId.mockResolvedValue(null);
-    mockForwardToStorage.mockClear();
     infoSpy.mockClear();
     errorSpy.mockClear();
+
+    mockTelegramService = {
+      forwardToStorage: mock(() =>
+        Promise.resolve({
+          telegramFileId: 'stored_file_id',
+          telegramFileUniqueId: 'stored_unique_id',
+          storageMessageId: 9999,
+        }),
+      ),
+    };
+
+    mockFileRepo = {
+      findByUniqueId: mock((): Promise<unknown> => Promise.resolve(null)),
+      create: mock(() => Promise.resolve()),
+    };
   });
 
   it('should initialize and launch the bot', async () => {
-    const { startBot } = await import('../src/bot');
-    const bot = await startBot();
+    const { startBot } = await import('../src/interfaces/bot/handler');
+    const bot = await startBot({
+      telegramService: mockTelegramService,
+      fileRepo: mockFileRepo,
+    });
 
     expect(bot).toBeDefined();
     expect(mockCommand).toHaveBeenCalledWith('start', expect.any(Function));
@@ -113,8 +95,11 @@ describe('Telegram Bot Handler', () => {
   });
 
   it('should handle /start command', async () => {
-    const { startBot } = await import('../src/bot');
-    await startBot();
+    const { startBot } = await import('../src/interfaces/bot/handler');
+    await startBot({
+      telegramService: mockTelegramService,
+      fileRepo: mockFileRepo,
+    });
 
     const startHandler = getStartHandler();
     const replyMock = mock(() => Promise.resolve());
@@ -127,8 +112,11 @@ describe('Telegram Bot Handler', () => {
   });
 
   it('should process document uploads and save to db', async () => {
-    const { startBot } = await import('../src/bot');
-    await startBot();
+    const { startBot } = await import('../src/interfaces/bot/handler');
+    await startBot({
+      telegramService: mockTelegramService,
+      fileRepo: mockFileRepo,
+    });
 
     const fileHandler = getFileHandler();
     const replyMock = mock(() => Promise.resolve());
@@ -150,8 +138,8 @@ describe('Telegram Bot Handler', () => {
     };
 
     await fileHandler(ctx);
-    expect(mockForwardToStorage).toHaveBeenCalledWith('doc_123', 'cv.pdf', 'document');
-    expect(mockInsert).toHaveBeenCalled();
+    expect(mockTelegramService.forwardToStorage).toHaveBeenCalledWith('doc_123', 'cv.pdf', 'document');
+    expect(mockFileRepo.create).toHaveBeenCalled();
     expect(replyMock).toHaveBeenCalledWith(
       expect.stringContaining('File berhasil diupload'),
       expect.any(Object),
@@ -159,8 +147,11 @@ describe('Telegram Bot Handler', () => {
   });
 
   it('should reject uploads exceeding max size limit', async () => {
-    const { startBot } = await import('../src/bot');
-    await startBot();
+    const { startBot } = await import('../src/interfaces/bot/handler');
+    await startBot({
+      telegramService: mockTelegramService,
+      fileRepo: mockFileRepo,
+    });
 
     const fileHandler = getFileHandler();
     const replyMock = mock(() => Promise.resolve());
@@ -183,18 +174,21 @@ describe('Telegram Bot Handler', () => {
     };
 
     await fileHandler(ctx);
-    expect(mockForwardToStorage).not.toHaveBeenCalled();
+    expect(mockTelegramService.forwardToStorage).not.toHaveBeenCalled();
     expect(replyMock).toHaveBeenCalledWith(expect.stringContaining('exceeds'));
   });
 
   it('should return existing download link for duplicates without uploading again', async () => {
-    const { startBot } = await import('../src/bot');
-    await startBot();
+    const { startBot } = await import('../src/interfaces/bot/handler');
+    await startBot({
+      telegramService: mockTelegramService,
+      fileRepo: mockFileRepo,
+    });
 
     const fileHandler = getFileHandler();
     const replyMock = mock(() => Promise.resolve());
 
-    mockFindFileByUniqueId.mockResolvedValueOnce({
+    mockFileRepo.findByUniqueId.mockResolvedValueOnce({
       publicId: 'already_exists_abc',
       telegramFileId: 'stored_file_id',
       telegramFileUniqueId: 'doc_uniq_123',
@@ -218,8 +212,8 @@ describe('Telegram Bot Handler', () => {
     };
 
     await fileHandler(ctx);
-    expect(mockForwardToStorage).not.toHaveBeenCalled();
-    expect(mockInsert).not.toHaveBeenCalled();
+    expect(mockTelegramService.forwardToStorage).not.toHaveBeenCalled();
+    expect(mockFileRepo.create).not.toHaveBeenCalled();
     expect(replyMock).toHaveBeenCalledWith(
       expect.stringContaining('already_exists_abc'),
       expect.any(Object),
@@ -227,8 +221,11 @@ describe('Telegram Bot Handler', () => {
   });
 
   it('should process sticker uploads', async () => {
-    const { startBot } = await import('../src/bot');
-    await startBot();
+    const { startBot } = await import('../src/interfaces/bot/handler');
+    await startBot({
+      telegramService: mockTelegramService,
+      fileRepo: mockFileRepo,
+    });
 
     const fileHandler = getFileHandler();
     const replyMock = mock(() => Promise.resolve());
@@ -248,8 +245,8 @@ describe('Telegram Bot Handler', () => {
     };
 
     await fileHandler(ctx);
-    expect(mockForwardToStorage).toHaveBeenCalledWith('sticker_123', 'file', 'sticker');
-    expect(mockInsert).toHaveBeenCalled();
+    expect(mockTelegramService.forwardToStorage).toHaveBeenCalledWith('sticker_123', 'file', 'sticker');
+    expect(mockFileRepo.create).toHaveBeenCalled();
     expect(replyMock).toHaveBeenCalledWith(
       expect.stringContaining('File berhasil diupload'),
       expect.any(Object),
@@ -257,8 +254,11 @@ describe('Telegram Bot Handler', () => {
   });
 
   it('should process video note uploads', async () => {
-    const { startBot } = await import('../src/bot');
-    await startBot();
+    const { startBot } = await import('../src/interfaces/bot/handler');
+    await startBot({
+      telegramService: mockTelegramService,
+      fileRepo: mockFileRepo,
+    });
 
     const fileHandler = getFileHandler();
     const replyMock = mock(() => Promise.resolve());
@@ -278,8 +278,8 @@ describe('Telegram Bot Handler', () => {
     };
 
     await fileHandler(ctx);
-    expect(mockForwardToStorage).toHaveBeenCalledWith('video_note_123', 'file', 'video_note');
-    expect(mockInsert).toHaveBeenCalled();
+    expect(mockTelegramService.forwardToStorage).toHaveBeenCalledWith('video_note_123', 'file', 'video_note');
+    expect(mockFileRepo.create).toHaveBeenCalled();
     expect(replyMock).toHaveBeenCalledWith(
       expect.stringContaining('File berhasil diupload'),
       expect.any(Object),

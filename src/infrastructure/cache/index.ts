@@ -1,0 +1,1 @@
+export { fileInfoCache, Cache } from '../../utils/cache';

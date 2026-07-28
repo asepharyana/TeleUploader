@@ -36,7 +36,7 @@ const mockRequireAuth = mock(
       Response.json({ error: 'Unauthorized' }, { status: 401 }),
 );
 
-mock.module('../src/bot', () => ({
+mock.module('../src/interfaces/bot/handler', () => ({
   startBot: mockStartBot,
 }));
 
@@ -65,6 +65,9 @@ mock.module('../src/routes/auth', () => ({
 
 mock.module('../src/utils/rateLimit', () => ({
   cleanupRateLimitCache: mock(),
+  clearRateLimitCache: mock(),
+  checkRateLimit: mock(() => true),
+  getRateLimitStats: mock(() => ({})),
   withRateLimit: <T extends Request>(
     handler: (req: T) => Promise<Response>,
   ): ((req: T) => Promise<Response>) => handler,
