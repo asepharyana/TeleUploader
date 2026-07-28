@@ -169,13 +169,41 @@ export const handleUploadObjectV1 = async (
   }
 
   const key = (formData.get('key') as string) || file.name;
-  const buffer = Buffer.from(await file.arrayBuffer());
-  const hash = computeHash(buffer);
-
   const tempPath = `/tmp/filedrop-web-${nanoid()}`;
-  await Bun.write(tempPath, buffer);
+  const writer = Bun.file(tempPath).writer();
+  const reader = file.stream().getReader();
+  const hasher = new Bun.CryptoHasher('sha256');
+  const SIGNATURE_BYTES = 16;
+  const signatureChunks: Buffer[] = [];
+  let signatureBytes = 0;
+  let sizeBytes = 0;
 
-  const signatureBuffer = buffer.subarray(0, 16);
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      const chunk = Buffer.from(value);
+      sizeBytes += chunk.byteLength;
+      hasher.update(chunk);
+      writer.write(chunk);
+      if (signatureBytes < SIGNATURE_BYTES) {
+        const remaining = SIGNATURE_BYTES - signatureBytes;
+        const sigChunk = chunk.subarray(0, remaining);
+        signatureChunks.push(sigChunk);
+        signatureBytes += sigChunk.byteLength;
+      }
+    }
+    writer.end();
+  } catch (error) {
+    writer.end();
+    await cleanupTempFile(tempPath);
+    throw error;
+  } finally {
+    reader.releaseLock();
+  }
+
+  const hash = hasher.digest('hex');
+  const signatureBuffer = Buffer.concat(signatureChunks, signatureBytes);
   const { fileName: finalFileName, mimeType } = ensureExtension(
     key.split('/').pop() || 'file',
     signatureBuffer,
@@ -184,13 +212,13 @@ export const handleUploadObjectV1 = async (
 
   const partFileNamePrefix = `s3-${bucket.name}-${key.replace(/\//g, '_')}`;
 
-  if (buffer.byteLength > config.telegramChunkSizeBytes) {
+  if (sizeBytes > config.telegramChunkSizeBytes) {
     const uploadedFile = await storeFileInTelegramChunks({
       tempPath,
       partFileNamePrefix,
       fileName: finalFileName,
       mimeType,
-      sizeBytes: buffer.byteLength,
+      sizeBytes,
       fileType: 'document',
       uploaderId: 0,
       bucketId: bucket.id,
@@ -200,7 +228,7 @@ export const handleUploadObjectV1 = async (
     return json(
       {
         key,
-        size: buffer.byteLength,
+        size: sizeBytes,
         etag: hash,
         downloadUrl: `${config.baseUrl}/f/${uploadedFile.publicId}`,
       },
@@ -225,7 +253,7 @@ export const handleUploadObjectV1 = async (
     storageMessageId: forwardResult.storageMessageId,
     fileName: finalFileName,
     mimeType,
-    sizeBytes: buffer.byteLength,
+    sizeBytes,
     fileType: 'document',
     uploaderId: 0,
     fileHash: hash,
@@ -240,7 +268,7 @@ export const handleUploadObjectV1 = async (
   await cleanupTempFile(tempPath);
 
   return json(
-    { key, size: buffer.byteLength, etag: hash, downloadUrl: `${config.baseUrl}/f/${publicId}` },
+    { key, size: sizeBytes, etag: hash, downloadUrl: `${config.baseUrl}/f/${publicId}` },
     201,
   );
 };

@@ -18,14 +18,6 @@ try {
   logger.warn('Auto-migration skipped (non-fatal)');
 }
 
-// ─── Auto-run migration at startup ───
-try {
-  await import('./db/migrate');
-} catch {
-  // migrate.ts calls process.exit(1) on failure — if it throws, log and continue
-  logger.warn('Auto-migration warning (non-fatal)');
-}
-
 const getS3RouteBucket = (req: Request): string | null => {
   const host = req.headers.get('host') || '';
   return extractS3BucketFromHost(host, config.s3VhostDomains);

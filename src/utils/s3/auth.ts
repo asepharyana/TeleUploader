@@ -1,3 +1,29 @@
+import { timingSafeEqual } from 'node:crypto';
+
+import { timingSafeEqual } from 'node:crypto';
+
+/**
+ * Timing-safe string comparison that prevents timing attacks.
+ *
+ * Uses `crypto.timingSafeEqual` which runs in constant time regardless of
+ * where the strings differ. Returns false for mismatched-length inputs
+ * to avoid leaking length information via early return.
+ *
+ * @param left - The first string to compare.
+ * @param right - The second string to compare.
+ * @returns True if both strings are equal.
+ */
+const timingSafeCompare = (left: string, right: string): boolean => {
+  const leftBuffer = Buffer.from(left);
+  const rightBuffer = Buffer.from(right);
+
+  if (leftBuffer.length !== rightBuffer.length) {
+    return false;
+  }
+
+  return timingSafeEqual(leftBuffer, rightBuffer);
+};
+
 export interface SigV4Result {
   isValid: boolean;
   credential: {
@@ -161,11 +187,11 @@ export const verifySignature = async (
     return { isValid: false, credential: null, errorCode: 'AccessDenied' };
   }
 
-  if (parsed.accessKey !== s3AccessKey) {
+  if (!timingSafeCompare(parsed.accessKey, s3AccessKey)) {
     return { isValid: false, credential: null, errorCode: 'SignatureDoesNotMatch' };
   }
 
-  if (parsed.region !== region) {
+  if (!timingSafeCompare(parsed.region, region)) {
     return { isValid: false, credential: null, errorCode: 'SignatureDoesNotMatch' };
   }
 
@@ -199,7 +225,7 @@ export const verifySignature = async (
   const signingKey = await getSigningKey(s3SecretKey, dateStamp, region);
   const expectedSignature = await hmacHex(signingKey, stringToSign);
 
-  if (expectedSignature !== parsed.signature) {
+  if (!timingSafeCompare(expectedSignature, parsed.signature)) {
     return { isValid: false, credential: null, errorCode: 'SignatureDoesNotMatch' };
   }
 
@@ -265,7 +291,9 @@ export const verifyPresignedUrl = async ({
   if (!Number.isFinite(expires) || expires <= 0 || !signedAt) {
     return { isValid: false, credential: null, errorCode: 'AccessDenied' };
   }
-  if (now.getTime() > signedAt.getTime() + expires * 1000) {
+  // AWS S3 spec limits presigned URLs to 7 days (604800 seconds)
+  const MAX_PRESIGNED_EXPIRY_SECONDS = 604800;
+  if (now.getTime() > signedAt.getTime() + expires * 1000 || expires > MAX_PRESIGNED_EXPIRY_SECONDS) {
     return { isValid: false, credential: null, errorCode: 'AccessDenied' };
   }
 
@@ -275,8 +303,8 @@ export const verifyPresignedUrl = async ({
   }
   const [accessKey, dateStamp, credentialRegion, service, termination] = credParts;
   if (
-    accessKey !== s3AccessKey ||
-    credentialRegion !== region ||
+    !timingSafeCompare(accessKey, s3AccessKey) ||
+    !timingSafeCompare(credentialRegion, region) ||
     service !== SERVICE ||
     termination !== TERMINATION
   ) {
@@ -301,7 +329,7 @@ export const verifyPresignedUrl = async ({
     stringToSign,
   );
 
-  if (expectedSignature !== signature) {
+  if (!timingSafeCompare(expectedSignature, signature)) {
     return { isValid: false, credential: null, errorCode: 'SignatureDoesNotMatch' };
   }
   return { isValid: true, credential: { accessKey, date: dateStamp, region, service } };
