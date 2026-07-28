@@ -113,8 +113,15 @@ async function s3Request(
 
 // ── Web API helper ───────────────────────────────────────────────────────────
 const api = (p: string) => `${BASE_URL}/api/v1${p}`;
+const AUTH_TOKEN = process.env.ADMIN_API_TOKEN || '';
+const authHeaders: Record<string, string> = AUTH_TOKEN
+  ? { authorization: `Bearer ${AUTH_TOKEN}` }
+  : {};
 const apiJson = (p: string, o: RequestInit = {}) =>
-  fetch(api(p), { headers: { 'content-type': 'application/json' }, ...o });
+  fetch(api(p), {
+    headers: { 'content-type': 'application/json', ...authHeaders },
+    ...o,
+  });
 
 // ── Shared cleanup ───────────────────────────────────────────────────────────
 afterAll(async () => {
@@ -217,7 +224,12 @@ describe('Web API v1 (production)', () => {
 // ═══════════════════════════════════════════════════════════════════════════════
 
 describe('S3 API (production, SigV4)', () => {
-  if (!S3_SECRET) throw new Error('S3_SECRET_KEY env var required');
+  const skipS3 = !S3_SECRET;
+  if (skipS3) {
+    it('S3 tests skipped — set S3_SECRET_KEY env var', () => {
+      console.info('ℹ️  S3_SKIP: S3_SECRET_KEY not set — skipping S3 tests');
+    });
+  } else {
 
   const bucketName = `e2e-s3-${TS}`;
 
@@ -466,7 +478,9 @@ describe('S3 API (production, SigV4)', () => {
     const xml = await r.text();
     expect(xml).toContain('Error');
   });
+  }
 });
 
 console.info(`\nℹ️  Production E2E — ${BASE_URL}`);
-if (!S3_SECRET) console.info('ℹ️  S3 tests will fail — set S3_SECRET_KEY');
+if (!S3_SECRET) console.info('ℹ️  S3 tests skipped — set S3_SECRET_KEY');
+if (AUTH_TOKEN) console.info('ℹ️  Web API tests use ADMIN_API_TOKEN');

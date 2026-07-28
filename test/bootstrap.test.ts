@@ -36,31 +36,43 @@ const mockRequireAuth = mock(
       Response.json({ error: 'Unauthorized' }, { status: 401 }),
 );
 
+// ── Mocks ──────────────────────────────────────────────────────────
+
 mock.module('../src/interfaces/bot/handler', () => ({
   startBot: mockStartBot,
 }));
 
-mock.module('../src/routes/upload', () => ({
+mock.module('../src/db/migrate', () => ({
+  runMigration: mock(() => Promise.resolve()),
+}));
+
+mock.module('../src/interfaces/http/controllers/upload-controller', () => ({
   handleUpload: mockHandleUpload,
 }));
-
-mock.module('../src/utils/auth', () => ({
-  requireAuth: mockRequireAuth,
-}));
-
-mock.module('../src/routes/files', () => ({
+mock.module('../src/interfaces/http/controllers/file-controller', () => ({
   handleFileRedirect: mock(),
   handleFileInfo: mock(),
 }));
-
-mock.module('../src/routes/health', () => ({
+mock.module('../src/interfaces/http/controllers/health-controller', () => ({
   handleHealth: mock(),
 }));
-
-mock.module('../src/routes/auth', () => ({
+mock.module('../src/interfaces/http/controllers/auth-controller', () => ({
   handleLogin: mock(),
   handleLogout: mock(),
   handleMe: mock(),
+}));
+mock.module('../src/interfaces/http/controllers/home-controller', () => ({
+  handleHome: mock(() => new Response('<html>home</html>')),
+}));
+mock.module('../src/interfaces/http/controllers/s3-controller', () => ({
+  handleS3Request: mock(() => new Response('Not Found', { status: 404 })),
+}));
+mock.module('../src/interfaces/http/controllers/web-api-controller', () => ({
+  handleWebApiV1: mock(() => Response.json({ error: 'Not Found' }, { status: 404 })),
+}));
+
+mock.module('../src/interfaces/http/middleware/auth', () => ({
+  requireAuth: mockRequireAuth,
 }));
 
 mock.module('../src/utils/rateLimit', () => ({
@@ -99,6 +111,9 @@ describe('Bootstrap Server', () => {
     expect(serveCallArgs.routes).toHaveProperty('/f/:public_id');
     expect(serveCallArgs.routes).toHaveProperty('/file/:public_id/info');
     expect(serveCallArgs.routes).toHaveProperty('/health');
+    expect(serveCallArgs.routes).toHaveProperty('/docs');
+    expect(serveCallArgs.routes).toHaveProperty(['/swagger.json']);
+    expect(serveCallArgs.routes).toHaveProperty('/');
     expect(serveCallArgs.routes).toHaveProperty('/api/v1/auth/login');
     expect(serveCallArgs.routes).toHaveProperty('/api/v1/auth/logout');
     expect(serveCallArgs.routes).toHaveProperty('/api/v1/auth/me');
