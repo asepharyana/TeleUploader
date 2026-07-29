@@ -127,6 +127,35 @@ export const routes = {
     POST: handleS3Direct,
     OPTIONS: handleS3Direct,
   },
+  // Catch-all for S3 path-style requests (/{bucket}/{key} ...)
+  // Only intercepts requests with S3 auth headers; others get 404.
+  '/*': {
+    GET: (req: Request): Promise<Response> => {
+      if (shouldHandleS3(req, Object.fromEntries(req.headers))) return handleS3Direct(req);
+      return Promise.resolve(new Response('Not Found', { status: 404 }));
+    },
+    PUT: (req: Request): Promise<Response> => {
+      if (shouldHandleS3(req, Object.fromEntries(req.headers))) return handleS3Direct(req);
+      return Promise.resolve(new Response('Not Found', { status: 404 }));
+    },
+    HEAD: (req: Request): Promise<Response> => {
+      if (shouldHandleS3(req, Object.fromEntries(req.headers))) return handleS3Direct(req);
+      return Promise.resolve(new Response('Not Found', { status: 404 }));
+    },
+    DELETE: (req: Request): Promise<Response> => {
+      if (shouldHandleS3(req, Object.fromEntries(req.headers))) return handleS3Direct(req);
+      return Promise.resolve(new Response('Not Found', { status: 404 }));
+    },
+    POST: (req: Request): Promise<Response> => {
+      if (shouldHandleS3(req, Object.fromEntries(req.headers))) return handleS3Direct(req);
+      return Promise.resolve(new Response('Not Found', { status: 404 }));
+    },
+    PATCH: (req: Request): Promise<Response> => {
+      if (shouldHandleS3(req, Object.fromEntries(req.headers))) return handleS3Direct(req);
+      return Promise.resolve(new Response('Not Found', { status: 404 }));
+    },
+    OPTIONS: handleS3Direct,
+  },
   '/api/v1/auth/login': {
     POST: withRateLimit(handleLogin),
   },
