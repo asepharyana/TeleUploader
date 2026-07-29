@@ -81,6 +81,10 @@ export const uploadFileInTelegramChunks = async (input: {
 
   const stream = createReadStream(input.tempPath, { highWaterMark: chunkSizeBytes });
 
+  // Concurrent upload set: tracks in-flight uploads and limits how many
+  // chunks are being uploaded at once from this single file.
+  const inFlight = new Set<Promise<void>>();
+
   for await (const data of stream) {
     const chunk = Buffer.isBuffer(data) ? data : Buffer.from(data as Uint8Array);
     if (chunk.byteLength === 0) continue;
@@ -94,23 +98,40 @@ export const uploadFileInTelegramChunks = async (input: {
       input.compress,
       input.compressionMinSizeBytes,
     );
-    const forwardResult = await botPool.forwardToStorage(
-      bytes,
-      `${input.partFileNamePrefix}.part-${partNumber}`,
-      'document',
-    );
+    const currentPart = partNumber;
 
-    parts.push({
-      partNumber,
-      telegramFileId: forwardResult.telegramFileId,
-      telegramFileUniqueId: forwardResult.telegramFileUniqueId,
-      storageMessageId: forwardResult.storageMessageId,
-      sizeBytes: chunk.byteLength,
-      storedSizeBytes: bytes.byteLength,
-      compressionAlgorithm,
-      etag: computeHash(chunk),
+    // Fire upload concurrently — don't await inside the read loop
+    const uploadPromise = botPool
+      .forwardToStorage(bytes, `${input.partFileNamePrefix}.part-${currentPart}`, 'document')
+      .then((forwardResult) => {
+        parts.push({
+          partNumber: currentPart,
+          telegramFileId: forwardResult.telegramFileId,
+          telegramFileUniqueId: forwardResult.telegramFileUniqueId,
+          storageMessageId: forwardResult.storageMessageId,
+          sizeBytes: chunk.byteLength,
+          storedSizeBytes: bytes.byteLength,
+          compressionAlgorithm,
+          etag: computeHash(chunk),
+        });
+      });
+
+    // Clean up from in-flight set when done (regardless of success/failure)
+    const trackPromise = uploadPromise.finally(() => {
+      inFlight.delete(trackPromise);
     });
+
+    inFlight.add(trackPromise);
+
+    // Backpressure: if too many chunks are in-flight, wait for one to
+    // finish before reading more — prevents unbounded memory growth.
+    if (inFlight.size >= config.uploadConcurrency * 2) {
+      await Promise.race(inFlight);
+    }
   }
+
+  // Wait for all remaining uploads to finish
+  await Promise.all(inFlight);
 
   return {
     parts,
