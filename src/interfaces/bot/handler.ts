@@ -92,7 +92,7 @@ export async function startBot(
   const fileRepo = deps.fileRepo ?? new DrizzleFileRepository();
 
   try {
-    const bot = new Telegraf(config.botToken);
+    const bot = new Telegraf(config.botTokens[0]);
 
     bot.command('start', async (ctx) => {
       await ctx.reply(
@@ -197,7 +197,9 @@ export async function startBot(
 
     await bot.launch();
 
-    logger.info('Telegram bot started', { botToken: `${config.botToken?.substring(0, 10)}...` });
+    logger.info('Telegram bot started', {
+      botToken: `${config.botTokens[0]?.substring(0, 10)}...`,
+    });
 
     return bot;
   } catch (error: unknown) {
