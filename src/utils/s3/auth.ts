@@ -46,6 +46,12 @@ export interface VerifyPresignedUrlInput {
 const SERVICE = 's3';
 const TERMINATION = 'aws4_request';
 
+/**
+ * Maximum acceptable clock skew between client and server for header-based
+ * SigV4 authentication. AWS allows 15 minutes.
+ */
+const MAX_CLOCK_SKEW_MS = 15 * 60 * 1000;
+
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const buf = (data: string | ArrayBuffer | Uint8Array): Uint8Array => {
   if (data instanceof Uint8Array) return data;
@@ -129,10 +135,40 @@ const buildCanonicalRequest = (
   return `${method}\n${canonicalUri}\n${canonicalQueryString}\n${canonicalHeaders}\n${signedHeaders}\n${hashedPayload}`;
 };
 
+/**
+ * Normalizes a URI per AWS SigV4 requirements plus RFC 3986:
+ *
+ * 1. Decode percent-encoded characters
+ * 2. Remove dot-segments (`.` and `..`) per RFC 3986 section 5.2.4
+ *
+ * @param uri - The raw URI path to normalize.
+ * @returns The normalized URI path.
+ */
 const normalizeUri = (uri: string): string => {
   if (!uri || uri === '') return '/';
-  // AWS SigV4 requires URI-decoded paths in the canonical request
-  return decodeURIComponent(uri);
+
+  // Step 1: Decode (SigV4 requirement)
+  const decoded = decodeURIComponent(uri);
+
+  // Step 2: Remove dot-segments per RFC 3986 section 5.2.4
+  const segments = decoded.split('/');
+  const result: string[] = [];
+
+  for (const segment of segments) {
+    if (segment === '.' || segment === '') {
+      // Skip `.` and empty segments (from double slashes)
+      continue;
+    }
+    if (segment === '..') {
+      result.pop(); // Go up one level
+      continue;
+    }
+    result.push(segment);
+  }
+
+  // Reconstruct path
+  const normalized = result.length > 0 ? `/${result.join('/')}` : '/';
+  return normalized;
 };
 
 const awsEncode = (value: string): string =>
@@ -149,21 +185,55 @@ export const buildCanonicalQueryString = (
   for (const [key, value] of searchParams.entries()) {
     if (!excludeKeys.has(key)) pairs.push([key, value]);
   }
+  // AWS SigV4 requires UTF-8 byte-order (code point) comparison, NOT localeCompare
   pairs.sort(([ak, av], [bk, bv]) => {
     const a = `${awsEncode(ak)}=${awsEncode(av)}`;
     const b = `${awsEncode(bk)}=${awsEncode(bv)}`;
-    return a.localeCompare(b);
+    if (a < b) return -1;
+    if (a > b) return 1;
+    return 0;
   });
   return pairs.map(([key, value]) => `${awsEncode(key)}=${awsEncode(value)}`).join('&');
 };
 
-const getHashedPayload = async (
-  body: string | null,
-  contentSha256: string | null,
-): Promise<string> => {
-  if (contentSha256) return contentSha256;
+const getHashedPayload = async (body: string | null): Promise<string> => {
   if (!body || body.length === 0) return await sha256Hex('');
   return await sha256Hex(body);
+};
+
+/**
+ * Parses an AWS SigV4 `x-amz-date` value (e.g. `20260707T120000Z`) into a Date.
+ *
+ * @param amzDate - The date string in `YYYYMMDDTHHmmssZ` format.
+ * @returns The parsed Date, or null if the format is invalid.
+ */
+const parseAmzDateUtc = (amzDate: string): Date | null => {
+  const match = amzDate.match(/^(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})(\d{2})Z$/);
+  if (!match) return null;
+  const [, year, month, day, hour, minute, second] = match;
+  return new Date(
+    Date.UTC(
+      Number.parseInt(year, 10),
+      Number.parseInt(month, 10) - 1,
+      Number.parseInt(day, 10),
+      Number.parseInt(hour, 10),
+      Number.parseInt(minute, 10),
+      Number.parseInt(second, 10),
+    ),
+  );
+};
+
+/**
+ * Validates that `host` is included in the signed headers list.
+ *
+ * AWS SigV4 mandates that `host` is always signed. Reject requests that
+ * omit it to prevent header injection / replay variants.
+ *
+ * @param signedHeaders - The semicolon-separated signed headers string.
+ * @returns True if `host` is present.
+ */
+const validateSignedHeaders = (signedHeaders: string): boolean => {
+  return signedHeaders.split(';').some((h) => h.toLowerCase() === 'host');
 };
 
 export const verifySignature = async (
@@ -193,6 +263,16 @@ export const verifySignature = async (
     return { isValid: false, credential: null, errorCode: 'SignatureDoesNotMatch' };
   }
 
+  // Validate service and termination in credential scope (M2)
+  if (parsed.service !== SERVICE || parsed.termination !== TERMINATION) {
+    return { isValid: false, credential: null, errorCode: 'SignatureDoesNotMatch' };
+  }
+
+  // Validate host is in signed headers (LOW/host)
+  if (!validateSignedHeaders(parsed.signedHeaders)) {
+    return { isValid: false, credential: null, errorCode: 'AccessDenied' };
+  }
+
   const parsedUrl = new URL(url, 'http://localhost');
   const canonicalUri = normalizeUri(parsedUrl.pathname);
   const canonicalQueryString = buildCanonicalQueryString(parsedUrl.searchParams);
@@ -201,7 +281,11 @@ export const verifySignature = async (
   if (contentSha256?.startsWith('STREAMING-')) {
     return { isValid: false, credential: null, errorCode: 'NotImplemented' };
   }
-  const hashedPayload = await getHashedPayload(body, contentSha256);
+
+  // H4: Compute hash from actual body instead of trusting header blindly.
+  // For streaming bodies (body === null), we cannot hash at this point —
+  // the caller (controller) must verify body hash after streaming.
+  const hashedPayload = await getHashedPayload(body);
 
   const canonicalRequest = buildCanonicalRequest(
     method,
@@ -214,8 +298,31 @@ export const verifySignature = async (
 
   const hashedCanonicalRequest = await sha256Hex(canonicalRequest);
 
-  const amzDate = headers['x-amz-date'] || '';
+  // M1: Fall back to Date header if x-amz-date is missing
+  const amzDate = headers['x-amz-date'] || headers.date || '';
+
+  // H5: Validate request freshness (clock skew / replay protection)
+  if (amzDate) {
+    const requestDate = parseAmzDateUtc(amzDate);
+    if (requestDate) {
+      const now = Date.now();
+      const skew = Math.abs(now - requestDate.getTime());
+      if (skew > MAX_CLOCK_SKEW_MS) {
+        return { isValid: false, credential: null, errorCode: 'RequestExpired' };
+      }
+    }
+  }
+
   const dateStamp = parsed.date;
+
+  // M3: Ensure date in credential scope matches x-amz-date
+  if (amzDate) {
+    const amzDateStamp = amzDate.slice(0, 8); // "YYYYMMDD"
+    if (amzDateStamp !== dateStamp) {
+      return { isValid: false, credential: null, errorCode: 'SignatureDoesNotMatch' };
+    }
+  }
+
   const credentialScope = `${dateStamp}/${region}/${parsed.service}/${parsed.termination}`;
 
   const stringToSign = `AWS4-HMAC-SHA256\n${amzDate}\n${credentialScope}\n${hashedCanonicalRequest}`;
@@ -236,22 +343,6 @@ export const verifySignature = async (
       service: parsed.service,
     },
   };
-};
-
-const parseAmzDateUtc = (amzDate: string): Date | null => {
-  const match = amzDate.match(/^(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})(\d{2})Z$/);
-  if (!match) return null;
-  const [, year, month, day, hour, minute, second] = match;
-  return new Date(
-    Date.UTC(
-      Number.parseInt(year, 10),
-      Number.parseInt(month, 10) - 1,
-      Number.parseInt(day, 10),
-      Number.parseInt(hour, 10),
-      Number.parseInt(minute, 10),
-      Number.parseInt(second, 10),
-    ),
-  );
 };
 
 export const verifyPresignedUrl = async ({
@@ -312,6 +403,11 @@ export const verifyPresignedUrl = async ({
     return { isValid: false, credential: null, errorCode: 'SignatureDoesNotMatch' };
   }
 
+  // Validate host is in signed headers for presigned URLs too
+  if (!validateSignedHeaders(signedHeaders)) {
+    return { isValid: false, credential: null, errorCode: 'AccessDenied' };
+  }
+
   const signedHeaderList = signedHeaders.split(';').filter(Boolean);
   const canonicalHeaders = signedHeaderList
     .map((headerName) => {
@@ -339,4 +435,31 @@ export const verifyPresignedUrl = async ({
 export const isS3Request = (headers: Record<string, string>): boolean => {
   const auth = headers.authorization || '';
   return auth.startsWith('AWS4-HMAC-SHA256');
+};
+
+/**
+ * Verifies that the actual body SHA-256 matches the `x-amz-content-sha256`
+ * header from the original request.
+ *
+ * This MUST be called AFTER the body has been fully streamed and hashed,
+ * as a second pass after `verifySignature` (which cannot hash a streaming
+ * body without consuming it).
+ *
+ * @param bodySha256 - The SHA-256 hex digest of the actual body content.
+ * @param headers - The original request headers.
+ * @returns An error result on mismatch, or null if the check passes.
+ */
+export const verifyBodyHash = (
+  bodySha256: string,
+  headers: Record<string, string>,
+): SigV4Result | null => {
+  const claimedHash = headers['x-amz-content-sha256'];
+  // If the client sent UNSIGNED-PAYLOAD, skip verification
+  if (!claimedHash || claimedHash === 'UNSIGNED-PAYLOAD' || claimedHash.startsWith('STREAMING-')) {
+    return null;
+  }
+  if (claimedHash !== bodySha256) {
+    return { isValid: false, credential: null, errorCode: 'BadDigest' };
+  }
+  return null;
 };

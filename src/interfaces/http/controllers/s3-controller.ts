@@ -18,6 +18,7 @@ import {
   listMultipartUploadsByBucket,
 } from '../../../db/multipart';
 import type { File } from '../../../db/schema';
+import type { ForwardResult } from '../../../domain/ports/telegram-service';
 import { botPool } from '../../../infrastructure/telegram/bot-pool';
 import logger from '../../../shared/logger/index';
 import { cleanupTempFile, ensureExtension, getErrorMessage } from '../../../shared/utils/file';
@@ -25,7 +26,7 @@ import {
   createChunkedObjectResponse,
   storeFileInTelegramChunks,
 } from '../../../utils/chunked-storage';
-import { verifyPresignedUrl, verifySignature } from '../../../utils/s3/auth';
+import { verifyBodyHash, verifyPresignedUrl, verifySignature } from '../../../utils/s3/auth';
 import { S3_CORS_HEADERS, s3Headers } from '../../../utils/s3/headers';
 import { createGetObjectResponse, type ObjectPartSource } from '../../../utils/s3/object-stream';
 import { parseRangeHeader, unsatisfiedContentRange } from '../../../utils/s3/range';
@@ -71,7 +72,19 @@ const s3Response = (
   status: number,
   reqId: string,
   extraHeaders: Record<string, string> = {},
-): Response => new Response(body, { status, headers: s3Headers(reqId, extraHeaders) });
+): Response => {
+  // Add content-type for empty 200-series responses (not 204 which has no body)
+  if (
+    body === null &&
+    status >= 200 &&
+    status < 300 &&
+    status !== 204 &&
+    !extraHeaders['content-type']
+  ) {
+    extraHeaders['content-type'] = 'application/xml';
+  }
+  return new Response(body, { status, headers: s3Headers(reqId, extraHeaders) });
+};
 
 /**
  * Builds an S3 OPTIONS preflight response with CORS headers.
@@ -93,7 +106,12 @@ const parseS3Path = (pathname: string): { bucket: string | null; key: string | n
   const parts = pathname.split('/').filter(Boolean);
   if (parts.length === 0) return { bucket: null, key: null };
   if (parts.length === 1) return { bucket: parts[0], key: null };
-  return { bucket: parts[0], key: parts.slice(1).join('/') };
+  // Decode URI components to match virtual-hosted behavior (H10)
+  const key = parts
+    .slice(1)
+    .map((segment) => decodeURIComponent(segment))
+    .join('/');
+  return { bucket: parts[0], key };
 };
 
 /**
@@ -240,7 +258,7 @@ export const handleS3Request = async (
 
     // ── Object-level: Multipart operations ──
     if (searchParams.has('uploads') && method === 'POST') {
-      return handleCreateMultipartUpload(bucket, key, searchParams, reqId);
+      return handleCreateMultipartUpload(bucket, key, searchParams, headers, reqId);
     }
     if (searchParams.has('uploadId') && searchParams.has('partNumber') && method === 'PUT') {
       return handleUploadPart(bucket, key, searchParams, req, reqId);
@@ -258,7 +276,7 @@ export const handleS3Request = async (
 
     // ── Standard object operations ──
     if (method === 'GET') return handleGetObject(bucket, key, searchParams, headers, reqId);
-    if (method === 'HEAD') return handleHeadObject(bucket, key, reqId);
+    if (method === 'HEAD') return handleHeadObject(bucket, key, headers, reqId);
     if (method === 'PUT') return handlePutObject(bucket, key, searchParams, headers, req, reqId);
     if (method === 'DELETE') return handleDeleteObject(bucket, key, reqId);
 
@@ -305,7 +323,13 @@ const handleListBuckets = async (reqId: string): Promise<Response> => {
  * @returns An S3 XML response indicating success or failure.
  */
 const handleCreateBucket = async (bucketName: string, reqId: string): Promise<Response> => {
-  if (!/^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$/.test(bucketName)) {
+  // M13: Stricter bucket validation — no consecutive dots, no IP format, no xn-- prefix
+  if (
+    !/^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$/.test(bucketName) ||
+    bucketName.includes('..') ||
+    /^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(bucketName) ||
+    bucketName.startsWith('xn--')
+  ) {
     return s3ErrorResponse(
       'InvalidBucketName',
       'The specified bucket is not valid.',
@@ -451,6 +475,46 @@ const handleGetObject = async (
       reqId,
     );
 
+  // H3: Conditional headers — If-Match / If-None-Match
+  const etag = `"${file.fileHash || nanoid(16)}"`;
+  const ifMatch = headers['if-match'];
+  if (ifMatch && ifMatch !== '*' && ifMatch !== etag) {
+    return s3ErrorResponse(
+      'PreconditionFailed',
+      'At least one of the pre-conditions you specified did not hold.',
+      `/${bucket}/${key}`,
+      412,
+      reqId,
+    );
+  }
+  const ifNoneMatch = headers['if-none-match'];
+  if (ifNoneMatch && ifNoneMatch === etag) {
+    return new Response(null, { status: 304 });
+  }
+
+  // H3: Conditional headers — If-Modified-Since / If-Unmodified-Since
+  const lastModified = file.createdAt instanceof Date ? file.createdAt : new Date(file.createdAt);
+  const ifModifiedSince = headers['if-modified-since'];
+  if (ifModifiedSince) {
+    const since = new Date(ifModifiedSince);
+    if (!Number.isNaN(since.getTime()) && lastModified.getTime() <= since.getTime()) {
+      return new Response(null, { status: 304 });
+    }
+  }
+  const ifUnmodifiedSince = headers['if-unmodified-since'];
+  if (ifUnmodifiedSince) {
+    const since = new Date(ifUnmodifiedSince);
+    if (!Number.isNaN(since.getTime()) && lastModified.getTime() > since.getTime()) {
+      return s3ErrorResponse(
+        'PreconditionFailed',
+        'At least one of the pre-conditions you specified did not hold.',
+        `/${bucket}/${key}`,
+        412,
+        reqId,
+      );
+    }
+  }
+
   // Chunked storage object
   if (file.storageBackend === 'chunked') {
     const totalSize = Number(file.sizeBytes);
@@ -488,7 +552,7 @@ const handleGetObject = async (
 
   // Regular Telegram object
   const fileInfo = await botPool.getFileInfo(file.telegramFileId);
-  const redirectUrl = `https://api.telegram.org/file/bot${fileInfo.bot_token}/${fileInfo.file_path}`;
+  const telegramUrl = `https://api.telegram.org/file/bot${fileInfo.bot_token}/${fileInfo.file_path}`;
 
   const totalSize = file.sizeBytes;
   const range = parseRangeHeader(headers.range || null, totalSize);
@@ -505,14 +569,13 @@ const handleGetObject = async (
     );
   }
 
-  if (!config.proxyS3Get) {
-    // Legacy 302 redirect path (when proxy is disabled)
-    return s3Response(null, 302, reqId, { location: redirectUrl });
-  }
+  // H1: Always proxy S3 GETs to avoid leaking the Telegram bot token
+  // in redirect URLs. The 302 redirect path is removed because the
+  // URL contains the bot_token — exposing it to clients is a security risk.
 
   const part: ObjectPartSource = {
     telegramFileId: file.telegramFileId,
-    telegramUrl: redirectUrl,
+    telegramUrl,
     sizeBytes: file.sizeBytes,
     partNumber: 1,
   };
@@ -601,9 +664,7 @@ const handleGetMultipartObject = async (
     });
   }
 
-  if (!config.proxyS3Get) {
-    return s3Response(null, 302, reqId, { location: sources[0]?.telegramUrl ?? '' });
-  }
+  // H1: Always proxy — never expose bot token in redirect URL
 
   try {
     return await createGetObjectResponse({
@@ -638,7 +699,12 @@ const handleGetMultipartObject = async (
  * @param reqId - The request identifier for S3 headers.
  * @returns An S3 response with object metadata headers.
  */
-const handleHeadObject = async (bucket: string, key: string, reqId: string): Promise<Response> => {
+const handleHeadObject = async (
+  bucket: string,
+  key: string,
+  headers: Record<string, string>,
+  reqId: string,
+): Promise<Response> => {
   const bucketRecord = await findBucketByName(bucket);
   if (!bucketRecord)
     return s3ErrorResponse(
@@ -659,6 +725,46 @@ const handleHeadObject = async (bucket: string, key: string, reqId: string): Pro
       reqId,
     );
 
+  // H3: Conditional headers for HEAD — If-Match / If-None-Match
+  const etag = `"${file.fileHash || nanoid(16)}"`;
+  const ifMatch = headers['if-match'];
+  if (ifMatch && ifMatch !== '*' && ifMatch !== etag) {
+    return s3ErrorResponse(
+      'PreconditionFailed',
+      'At least one of the pre-conditions you specified did not hold.',
+      `/${bucket}/${key}`,
+      412,
+      reqId,
+    );
+  }
+  const ifNoneMatch = headers['if-none-match'];
+  if (ifNoneMatch && ifNoneMatch === etag) {
+    return new Response(null, { status: 304 });
+  }
+
+  // H3: Conditional headers for HEAD — If-Modified-Since / If-Unmodified-Since
+  const lastModified = file.createdAt instanceof Date ? file.createdAt : new Date(file.createdAt);
+  const ifModifiedSince = headers['if-modified-since'];
+  if (ifModifiedSince) {
+    const since = new Date(ifModifiedSince);
+    if (!Number.isNaN(since.getTime()) && lastModified.getTime() <= since.getTime()) {
+      return new Response(null, { status: 304 });
+    }
+  }
+  const ifUnmodifiedSince = headers['if-unmodified-since'];
+  if (ifUnmodifiedSince) {
+    const since = new Date(ifUnmodifiedSince);
+    if (!Number.isNaN(since.getTime()) && lastModified.getTime() > since.getTime()) {
+      return s3ErrorResponse(
+        'PreconditionFailed',
+        'At least one of the pre-conditions you specified did not hold.',
+        `/${bucket}/${key}`,
+        412,
+        reqId,
+      );
+    }
+  }
+
   return s3Response(null, 200, reqId, {
     'content-type': file.mimeType,
     'content-length': String(file.sizeBytes),
@@ -667,6 +773,7 @@ const handleHeadObject = async (bucket: string, key: string, reqId: string): Pro
       file.createdAt instanceof Date ? file.createdAt.toUTCString() : new Date().toUTCString(),
     'accept-ranges': 'bytes',
     'cache-control': 'public, max-age=31536000',
+    'x-amz-version-id': 'null',
   });
 };
 
@@ -789,6 +896,31 @@ const handlePutObject = async (
   // Stream body to temp file — O(1) memory, safe for multi-GB blobs
   const contentType = headers['content-type'] || 'application/octet-stream';
   const streamed = await streamBodyToTemp(req.body);
+
+  // H4: Verify body hash against x-amz-content-sha256
+  const bodyHashError = verifyBodyHash(streamed.fileHash, headers);
+  if (bodyHashError) {
+    await cleanupTempFile(streamed.tempPath);
+    return s3ErrorResponse(
+      bodyHashError.errorCode || 'BadDigest',
+      'The Content-MD5 or x-amz-content-sha256 you specified did not match what we received.',
+      `/${bucket}/${key}`,
+      400,
+      reqId,
+    );
+  }
+
+  // M12: Reject oversized bodies
+  if (streamed.sizeBytes > config.maxRequestBodyBytes) {
+    await cleanupTempFile(streamed.tempPath);
+    return s3ErrorResponse(
+      'EntityTooLarge',
+      'Your proposed upload exceeds the maximum allowed object size.',
+      `/${bucket}/${key}`,
+      400,
+      reqId,
+    );
+  }
 
   // Idempotent PUT: if the object already exists, skip upload
   const existing = await findFileByBucketAndKey(bucketRecord.id, key);
@@ -948,9 +1080,11 @@ const handleCopyObject = async (
   }
 
   // Conditional copy: if-match / if-none-match checks
+  // M9: Use stable etag (telegramFileId fallback when fileHash is null)
+  const sourceEtag = sourceFile.fileHash || sourceFile.telegramFileId;
   const ifMatch = headers['x-amz-copy-source-if-match'];
   const ifNoneMatch = headers['x-amz-copy-source-if-none-match'];
-  if (ifMatch && sourceFile.fileHash && ifMatch !== `"${sourceFile.fileHash}"`) {
+  if (ifMatch && ifMatch !== '*' && ifMatch !== `"${sourceEtag}"`) {
     return s3ErrorResponse(
       'PreconditionFailed',
       'The preconditions you specified did not hold.',
@@ -959,7 +1093,7 @@ const handleCopyObject = async (
       reqId,
     );
   }
-  if (ifNoneMatch && sourceFile.fileHash && ifNoneMatch === `"${sourceFile.fileHash}"`) {
+  if (ifNoneMatch && ifNoneMatch === `"${sourceEtag}"`) {
     return s3ErrorResponse(
       'PreconditionFailed',
       'The preconditions you specified did not hold.',
@@ -1050,12 +1184,30 @@ const handleDeleteObjects = async (
     );
 
   const { keys, quiet } = parseDeleteObjectsBody(body);
+
+  // M11: S3 spec limits batch delete to 1000 keys
+  if (keys.length > 1000) {
+    return s3ErrorResponse(
+      'MalformedXML',
+      'The XML you provided was not well-formed or did not validate against our published schema. Max 1000 keys per request.',
+      `/${bucket}`,
+      400,
+      reqId,
+    );
+  }
+
   const deletedKeys: string[] = [];
+  const errors: Array<{ key: string; code: string; message: string }> = [];
   for (const key of keys) {
     const ok = await softDeleteFile(bucketRecord.id, key);
-    if (ok) deletedKeys.push(key);
+    if (ok) {
+      deletedKeys.push(key);
+    } else {
+      // Per S3 spec, deleting a non-existent key is idempotent — report as success
+      deletedKeys.push(key);
+    }
   }
-  const xml = quiet ? deleteResultXml([], []) : deleteResultXml(deletedKeys, []);
+  const xml = quiet ? deleteResultXml([], []) : deleteResultXml(deletedKeys, errors);
   return s3Response(xml, 200, reqId, { 'content-type': 'application/xml' });
 };
 
@@ -1212,6 +1364,7 @@ const handleCreateMultipartUpload = async (
   bucket: string,
   key: string,
   _searchParams: URLSearchParams,
+  headers: Record<string, string>,
   reqId: string,
 ): Promise<Response> => {
   const bucketRecord = await findBucketByName(bucket);
@@ -1224,7 +1377,8 @@ const handleCreateMultipartUpload = async (
       reqId,
     );
 
-  const uploadId = await createMultipartUpload(bucketRecord.id, key, 's3');
+  const contentType = headers['content-type'] || null;
+  const uploadId = await createMultipartUpload(bucketRecord.id, key, 's3', contentType);
 
   const xml = initiateMultipartUploadXml(bucket, key, uploadId);
   return s3Response(xml, 200, reqId, { 'content-type': 'application/xml' });
@@ -1250,8 +1404,15 @@ const handleUploadPart = async (
   reqId: string,
 ): Promise<Response> => {
   const uploadId = searchParams.get('uploadId')!;
-  const partNumber = Number.parseInt(searchParams.get('partNumber')!, 10);
-  if (partNumber < 1 || partNumber > 10000) {
+  // M14: Validate partNumber is actually an integer, not NaN
+  const partNumberRaw = searchParams.get('partNumber')!;
+  const partNumber = Number.parseInt(partNumberRaw, 10);
+  if (
+    !Number.isFinite(partNumber) ||
+    !Number.isInteger(partNumber) ||
+    partNumber < 1 ||
+    partNumber > 10000
+  ) {
     return s3ErrorResponse(
       'InvalidArgument',
       'Part number must be an integer between 1 and 10000',
@@ -1315,12 +1476,18 @@ const handleUploadPart = async (
     );
   }
 
-  const forwardResult = await botPool.forwardToStorage(
-    createReadStream(tempPath),
-    `mp-${uploadId}-part-${partNumber}`,
-    'document',
-  );
-
+  // M4: Ensure temp file cleanup even if forwardToStorage fails
+  let forwardResult: ForwardResult;
+  try {
+    forwardResult = await botPool.forwardToStorage(
+      createReadStream(tempPath),
+      `mp-${uploadId}-part-${partNumber}`,
+      'document',
+    );
+  } catch (error) {
+    await cleanupTempFile(tempPath);
+    throw error;
+  }
   await cleanupTempFile(tempPath);
 
   const etag = hasher.digest('hex');
@@ -1359,7 +1526,8 @@ const handleCompleteMultipartUpload = async (
 ): Promise<Response> => {
   const uploadId = searchParams.get('uploadId')!;
   const multipart = await findMultipartUpload(uploadId);
-  if (!multipart) {
+  // H5: Verify both upload exists AND key matches (consistent with handleUploadPart)
+  if (!multipart || multipart.s3Key !== key) {
     return s3ErrorResponse(
       'NoSuchUpload',
       'The specified upload does not exist.',
@@ -1384,6 +1552,7 @@ const handleCompleteMultipartUpload = async (
     );
   }
 
+  // H8: Verify count AND part numbers AND etags match stored parts
   if (parts.length !== storedParts.length) {
     return s3ErrorResponse(
       'InvalidPart',
@@ -1394,10 +1563,33 @@ const handleCompleteMultipartUpload = async (
     );
   }
 
-  const totalSize = storedParts.reduce((sum, p) => sum + p.sizeBytes, 0);
+  // Build a map for O(1) part number lookup
+  const storedByNumber = new Map<number, (typeof storedParts)[0]>();
+  for (const sp of storedParts) {
+    storedByNumber.set(sp.partNumber, sp);
+  }
+
+  for (const clientPart of parts) {
+    const stored = storedByNumber.get(clientPart.partNumber);
+    if (!stored || stored.etag !== clientPart.etag) {
+      return s3ErrorResponse(
+        'InvalidPart',
+        'One or more specified parts could not be found. The etag or part number does not match.',
+        `/${bucket}/${key}`,
+        400,
+        reqId,
+      );
+    }
+  }
+
+  const totalSize = storedParts.reduce((sum, p) => sum + Number(p.sizeBytes), 0);
+  const combinedEtag = storedParts.map((p) => p.etag).join('-');
 
   const publicId = nanoid();
   const { db, files: fileSchema } = await import('../../../db/index');
+
+  // M7: Use stored content-type from the multipart record if available
+  const mimeType = multipart.contentType || 'application/octet-stream';
 
   await db.insert(fileSchema).values({
     publicId,
@@ -1406,7 +1598,7 @@ const handleCompleteMultipartUpload = async (
     storageChatId: config.storageChatId,
     storageMessageId: storedParts[0]!.storageMessageId,
     fileName: key.split('/').pop() || 'file',
-    mimeType: 'application/octet-stream',
+    mimeType,
     sizeBytes: totalSize,
     fileType: 'document',
     uploaderId: 0,
@@ -1422,7 +1614,6 @@ const handleCompleteMultipartUpload = async (
   await completeMultipartUpload(uploadId);
 
   const location = `${config.baseUrl}/${bucket}/${key}`;
-  const combinedEtag = storedParts.map((p) => p.etag).join('-');
   const xml = completeMultipartUploadXml(bucket, key, combinedEtag, location);
 
   return s3Response(xml, 200, reqId, { 'content-type': 'application/xml' });

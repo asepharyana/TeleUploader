@@ -1,3 +1,5 @@
+import { nanoid } from 'nanoid';
+
 export const S3_CORS_HEADERS: Record<string, string> = {
   'access-control-allow-origin': '*',
   'access-control-allow-methods': 'GET, PUT, HEAD, DELETE, POST, OPTIONS',
@@ -31,7 +33,13 @@ export const s3Headers = (
   extraHeaders: Record<string, string> = {},
 ): Record<string, string> => ({
   ...S3_CORS_HEADERS,
-  ...(requestId ? { 'x-amz-request-id': requestId, 'x-amz-id-2': requestId } : {}),
+  server: 'AmazonS3',
+  ...(requestId
+    ? {
+        'x-amz-request-id': requestId,
+        'x-amz-id-2': `${requestId}+${nanoid(16)}`,
+      }
+    : {}),
   ...extraHeaders,
 });
 

@@ -9,6 +9,7 @@ export interface MultipartUpload {
   initiatedAt: Date;
   status: string;
   initiatedBy: string;
+  contentType: string | null;
 }
 
 export interface MultipartPart {
@@ -27,17 +28,20 @@ export const createMultipartUpload = async (
   bucketId: string,
   s3Key: string,
   initiatedBy: string,
+  contentType?: string | null,
 ): Promise<string> => {
   const uploadId = nanoid(32);
   await db.execute(
-    sql`INSERT INTO multipart_uploads (upload_id, bucket_id, s3_key, initiated_by) VALUES (${uploadId}, ${bucketId}, ${s3Key}, ${initiatedBy})`,
+    contentType
+      ? sql`INSERT INTO multipart_uploads (upload_id, bucket_id, s3_key, initiated_by, content_type) VALUES (${uploadId}, ${bucketId}, ${s3Key}, ${initiatedBy}, ${contentType})`
+      : sql`INSERT INTO multipart_uploads (upload_id, bucket_id, s3_key, initiated_by) VALUES (${uploadId}, ${bucketId}, ${s3Key}, ${initiatedBy})`,
   );
   return uploadId;
 };
 
 export const findMultipartUpload = async (uploadId: string): Promise<MultipartUpload | null> => {
   const result = (await db.execute(
-    sql`SELECT upload_id, bucket_id, s3_key, initiated_at, status FROM multipart_uploads WHERE upload_id = ${uploadId} AND status = 'in_progress'`,
+    sql`SELECT upload_id, bucket_id, s3_key, initiated_at, status, content_type FROM multipart_uploads WHERE upload_id = ${uploadId} AND status = 'in_progress'`,
   )) as unknown as Record<string, unknown>[];
   if (result.length === 0) return null;
   const r = result[0]!;
@@ -48,6 +52,7 @@ export const findMultipartUpload = async (uploadId: string): Promise<MultipartUp
     initiatedAt: new Date(r.initiated_at as string),
     status: r.status as string,
     initiatedBy: '',
+    contentType: (r.content_type as string | null) || null,
   };
 };
 
@@ -58,10 +63,12 @@ export const completeMultipartUpload = async (uploadId: string): Promise<void> =
 };
 
 export const abortMultipartUpload = async (uploadId: string): Promise<void> => {
+  // H7: FK cascade only fires on DELETE, not UPDATE. Delete parts explicitly
+  // before updating the upload status.
+  await db.execute(sql`DELETE FROM multipart_parts WHERE upload_id = ${uploadId}`);
   await db.execute(
     sql`UPDATE multipart_uploads SET status = 'aborted' WHERE upload_id = ${uploadId}`,
   );
-  // Parts are cascade-deleted by FK
 };
 
 export const insertMultipartPart = async (
@@ -98,6 +105,7 @@ const mapRowToMultipartUpload = (r: Record<string, unknown>): MultipartUpload =>
   initiatedAt: new Date(r.initiated_at as string),
   status: r.status as string,
   initiatedBy: (r.initiated_by as string | null) || '',
+  contentType: (r.content_type as string | null) || null,
 });
 
 export const listMultipartUploadsByBucket = async (

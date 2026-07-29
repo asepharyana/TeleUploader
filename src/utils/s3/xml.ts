@@ -277,8 +277,10 @@ export const s3ErrorResponse = (
 // ─────── DeleteObjects XML parser ───────
 
 export const parseDeleteObjectsBody = (body: string): { keys: string[]; quiet: boolean } => {
-  const keys = Array.from(body.matchAll(/<Key>([^<]+)<\/Key>/g), (match) => match[1]);
-  const quiet = body.includes('<Quiet>true</Quiet>') || body.includes('<Quiet>true ');
+  // H9: Use non-greedy match to handle keys containing < character
+  const keys = Array.from(body.matchAll(/<Key>([\s\S]*?)<\/Key>/g), (match) => match[1]);
+  // Handle whitespace inside <Quiet> element + namespace prefix support
+  const quiet = /<\w*:?Quiet\w*>\s*true\s*<\/\w*:?Quiet\w*>/i.test(body);
   return { keys, quiet };
 };
 
@@ -299,7 +301,7 @@ export const parseCompleteMultipartBody = (body: string): CompletePart[] => {
     const etagMatch = partXml.match(/<ETag>"?([^"<\s]+)"?<\/ETag>/);
     if (numMatch && etagMatch) {
       parts.push({
-        partNumber: parseInt(numMatch[1], 10),
+        partNumber: Number.parseInt(numMatch[1], 10),
         etag: etagMatch[1].replace(/^"/, '').replace(/"$/, ''),
       });
     }
