@@ -1,5 +1,5 @@
 import { createHmac, timingSafeEqual } from 'node:crypto';
-import { config } from '../../../config/index';
+import { config } from '../../../env';
 
 const ADMIN_USERNAME = 'admin';
 const SIGNATURE_SEPARATOR = '.';

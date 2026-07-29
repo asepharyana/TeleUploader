@@ -1,17 +1,13 @@
-import { randomUUID } from 'node:crypto';
 import { createReadStream } from 'node:fs';
 import { open } from 'node:fs/promises';
-import { gzipSync } from 'node:zlib';
 import { nanoid } from 'nanoid';
 import type { NewFilePart } from '../../domain/entities/file-part';
 import type { IFilePartRepository } from '../../domain/ports/file-part-repository';
 import type { IFileRepository } from '../../domain/ports/file-repository';
 import type { ITelegramService } from '../../domain/ports/telegram-service';
+import { type CompressionAlgorithm, maybeCompressChunk } from '../../shared/utils/compress';
 import { checkFileSize, computeHash, ensureExtension, getFileType } from '../../shared/utils/file';
 import type { UploadInput, UploadOutput } from '../dto/upload';
-
-/** Compression algorithm string literal used in chunked storage. */
-type ChunkCompressionAlgorithm = 'gzip' | null;
 
 /** Metadata for a single uploaded chunk/part. */
 interface UploadedPart {
@@ -28,7 +24,7 @@ interface UploadedPart {
   /** Stored (post-compression) size in bytes. */
   storedSizeBytes: number;
   /** Compression algorithm applied, or null if uncompressed. */
-  compressionAlgorithm: ChunkCompressionAlgorithm;
+  compressionAlgorithm: CompressionAlgorithm;
   /** SHA-256 hash of the original chunk content. */
   etag: string;
 }
@@ -80,32 +76,6 @@ const asSafeChunkSize = (chunkSizeBytes: number): number => {
     throw new Error('Invalid Telegram chunk size');
   }
   return chunkSizeBytes;
-};
-
-/**
- * Optionally gzip-compresses a chunk if compression is enabled and the chunk
- * is large enough to benefit from it.
- *
- * @param chunk - The raw chunk buffer.
- * @param compress - Whether compression is enabled.
- * @param compressionMinSizeBytes - Minimum chunk size to attempt compression.
- * @returns The (possibly compressed) buffer and the algorithm used.
- */
-const maybeCompressChunk = (
-  chunk: Buffer,
-  compress: boolean,
-  compressionMinSizeBytes: number,
-): { bytes: Buffer; compressionAlgorithm: ChunkCompressionAlgorithm } => {
-  if (!compress || chunk.byteLength < compressionMinSizeBytes) {
-    return { bytes: chunk, compressionAlgorithm: null };
-  }
-
-  const gzipped = gzipSync(chunk);
-  if (gzipped.byteLength >= chunk.byteLength) {
-    return { bytes: chunk, compressionAlgorithm: null };
-  }
-
-  return { bytes: gzipped, compressionAlgorithm: 'gzip' };
 };
 
 /**
@@ -258,7 +228,7 @@ export function createUploadFileUseCase(deps: UploadFileUseCaseDeps) {
         throw new Error('Chunked upload produced no parts');
       }
 
-      const fileId = randomUUID();
+      const fileId = nanoid();
       const publicId = nanoid();
 
       const newFile = await deps.fileRepo.create({

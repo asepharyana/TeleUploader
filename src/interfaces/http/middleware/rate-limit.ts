@@ -1,4 +1,4 @@
-import { config } from '../../../config/index';
+import { config } from '../../../env';
 import logger from '../../../shared/logger/index';
 import { extractClientIp } from '../../../shared/utils/ip';
 

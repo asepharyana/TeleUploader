@@ -1,8 +1,8 @@
 import { createReadStream } from 'node:fs';
 import { nanoid } from 'nanoid';
-import { config } from '../../../config/index';
 import type { File as FileEntity } from '../../../domain/entities/file';
 import type { ForwardResult } from '../../../domain/ports/telegram-service';
+import { config } from '../../../env';
 import {
   bucketRepository,
   chunkedStorage,

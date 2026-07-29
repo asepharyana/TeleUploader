@@ -1,21 +1,15 @@
 import { createReadStream } from 'node:fs';
-import { gzipSync } from 'node:zlib';
 import { nanoid } from 'nanoid';
 import type { File as FileEntity } from '../../domain/entities/file';
-import type { CompressionAlgorithm, NewFilePart } from '../../domain/entities/file-part';
+import type { NewFilePart } from '../../domain/entities/file-part';
 import type { IFilePartRepository } from '../../domain/ports/file-part-repository';
 import type { IFileRepository } from '../../domain/ports/file-repository';
 import type { ITelegramService } from '../../domain/ports/telegram-service';
 import { config } from '../../env';
 import { createGetObjectResponse, type ObjectPartSource } from '../../interfaces/s3/object-stream';
 import type { RangeParseResult } from '../../interfaces/s3/range';
+import { type CompressionAlgorithm, maybeCompressChunk } from '../../shared/utils/compress';
 import { computeHash } from '../../shared/utils/file';
-
-/**
- * Chunk compression algorithm identifier.
- * `"gzip"` if gzip compression was applied, `null` for uncompressed.
- */
-export type ChunkCompressionAlgorithm = CompressionAlgorithm;
 
 /**
  * Metadata about a single uploaded chunk (part) stored in Telegram.
@@ -34,7 +28,7 @@ export interface ChunkedUploadPart {
   /** Stored (post-compression) size in bytes */
   storedSizeBytes: number;
   /** Compression algorithm applied, or null */
-  compressionAlgorithm: ChunkCompressionAlgorithm;
+  compressionAlgorithm: CompressionAlgorithm;
   /** ETag (SHA-256 hash) of the original chunk */
   etag: string;
 }
@@ -87,36 +81,6 @@ const asSafeChunkSize = (chunkSizeBytes: number): number => {
     throw new Error('Invalid Telegram chunk size');
   }
   return chunkSizeBytes;
-};
-
-/**
- * Optionally compress a chunk with gzip.
- *
- * Compression is skipped if:
- * - The `compress` flag is false.
- * - The chunk is smaller than `compressionMinSizeBytes`.
- * - The compressed result is larger than the original.
- *
- * @param chunk - The raw chunk buffer.
- * @param compress - Whether compression is enabled.
- * @param compressionMinSizeBytes - Minimum chunk size to attempt compression.
- * @returns The (possibly compressed) bytes and the algorithm used.
- */
-const maybeCompressChunk = (
-  chunk: Buffer,
-  compress: boolean,
-  compressionMinSizeBytes: number,
-): { bytes: Buffer; compressionAlgorithm: ChunkCompressionAlgorithm } => {
-  if (!compress || chunk.byteLength < compressionMinSizeBytes) {
-    return { bytes: chunk, compressionAlgorithm: null };
-  }
-
-  const gzipped = gzipSync(chunk);
-  if (gzipped.byteLength >= chunk.byteLength) {
-    return { bytes: chunk, compressionAlgorithm: null };
-  }
-
-  return { bytes: gzipped, compressionAlgorithm: 'gzip' };
 };
 
 /**

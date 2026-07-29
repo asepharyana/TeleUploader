@@ -1,5 +1,5 @@
 import { serve } from 'bun';
-import { config } from './config/index';
+import { config } from './env';
 import { fileInfoCache } from './infrastructure/cache/index';
 import { startBot } from './interfaces/bot/handler';
 import { handleS3Request } from './interfaces/http/controllers/s3-controller';

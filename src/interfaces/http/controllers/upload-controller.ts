@@ -1,6 +1,6 @@
 import { createWriteStream } from 'node:fs';
 import { nanoid } from 'nanoid';
-import { config } from '../../../config/index';
+import { config } from '../../../env';
 import { chunkedStorage, fileRepository, uploadBatcher } from '../../../infrastructure/di';
 import type { PreparedUpload } from '../../../infrastructure/telegram/upload-batcher';
 import logger from '../../../shared/logger/index';

@@ -4,7 +4,7 @@ import {
   createLogoutUseCase,
   createMeUseCase,
 } from '../../../application/use-cases/authenticate';
-import { config } from '../../../config/index';
+import { config } from '../../../env';
 import {
   checkBearerToken,
   clearSessionCookie,

@@ -1,4 +1,3 @@
-import type { InferInsertModel, InferSelectModel } from 'drizzle-orm';
 import {
   bigint,
   boolean,
@@ -63,15 +62,3 @@ export const fileParts = pgTable('file_parts', {
   etag: text('etag').notNull(),
   createdAt: timestamp('created_at').defaultNow().notNull(),
 });
-
-/** Type representing a file row selected from the database. */
-export type File = InferSelectModel<typeof files>;
-
-/** Type representing a file row being inserted into the database. */
-export type NewFile = InferInsertModel<typeof files>;
-
-/** Type representing a file part row selected from the database. */
-export type FilePart = InferSelectModel<typeof fileParts>;
-
-/** Type representing a file part row being inserted into the database. */
-export type NewFilePart = InferInsertModel<typeof fileParts>;

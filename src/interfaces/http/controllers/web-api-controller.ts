@@ -1,6 +1,6 @@
 import { createReadStream } from 'node:fs';
 import { nanoid } from 'nanoid';
-import { config } from '../../../config/index';
+import { config } from '../../../env';
 import { bucketRepository, chunkedStorage, fileRepository } from '../../../infrastructure/di';
 import { db, files as fileSchema } from '../../../infrastructure/persistence/drizzle/index';
 import { botPool } from '../../../infrastructure/telegram/bot-pool';

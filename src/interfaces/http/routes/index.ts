@@ -1,4 +1,4 @@
-import { config } from '../../../config/index';
+import { config } from '../../../env';
 import { handleSwaggerHtml, handleSwaggerJson } from '../../../routes/swagger';
 import { isS3Request } from '../../s3/auth';
 import { extractS3BucketFromHost } from '../../s3/virtual-host';
