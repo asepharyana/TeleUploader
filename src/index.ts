@@ -1,7 +1,6 @@
 import { serve } from 'bun';
 import { config } from './config/index';
 import { fileInfoCache } from './infrastructure/cache/index';
-import { clearQueue, getQueueStats, waitForQueue } from './infrastructure/telegram/upload-queue';
 import { startBot } from './interfaces/bot/handler';
 import { handleS3Request } from './interfaces/http/controllers/s3-controller';
 import { cleanupRateLimitCache } from './interfaces/http/middleware/rate-limit';
@@ -66,19 +65,6 @@ const gracefulShutdown = async (signal: string): Promise<void> => {
 
   logger.info('Closing HTTP server — no new requests accepted');
   server.stop();
-
-  // Drain pending upload queue with a timeout
-  const { pending, size } = getQueueStats();
-  if (pending > 0 || size > 0) {
-    logger.info('Draining upload queue', { pending, size });
-    const drainTimeout = setTimeout(() => {
-      logger.warn('Upload queue drain timeout — clearing remaining tasks');
-      clearQueue();
-    }, 30_000);
-    await waitForQueue();
-    clearTimeout(drainTimeout);
-    logger.info('Upload queue drained');
-  }
 
   logger.info('Stopping Telegram bot');
   bot.stop(signal);
