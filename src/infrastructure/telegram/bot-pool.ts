@@ -42,7 +42,9 @@ const sleep = (ms: number): Promise<void> => {
 const isTransientError = (error: unknown): boolean => {
   const str = error instanceof Error ? error.message : String(error);
   const transientPatterns = [
-    'retry after',
+    // 'retry after' is deliberately omitted — 429 is handled by
+    // executeWithBotRetry at a deeper layer. Including it here would
+    // cause double-retry (up to 96 attempts per chunk).
     'timeout',
     'Timed out',
     'etimedout',
@@ -75,6 +77,12 @@ const isTransientError = (error: unknown): boolean => {
  * before giving up and propagating the error to the caller.
  */
 const MAX_TRANSIENT_RETRIES = 3;
+
+/**
+ * Timeout in milliseconds for individual Telegram API calls.
+ * 120 seconds to accommodate large document uploads.
+ */
+const TELEGRAM_API_TIMEOUT_MS = 120_000;
 
 /**
  * Manages a pool of Telegram bots with automatic rotation and rate-limit handling.
@@ -129,7 +137,17 @@ export class BotPool implements ITelegramService {
     const currentBot = this.bots[botIndex];
     const currentToken = this.botTokens[botIndex];
     try {
-      return await action(currentBot, currentToken);
+      // Add timeout to prevent hung API calls from occupying queue slots
+      const result = await Promise.race([
+        action(currentBot, currentToken),
+        new Promise<never>((_, reject) =>
+          setTimeout(
+            () => reject(new Error(`Telegram API timeout after ${TELEGRAM_API_TIMEOUT_MS}ms`)),
+            TELEGRAM_API_TIMEOUT_MS,
+          ),
+        ),
+      ]);
+      return result;
     } catch (error: unknown) {
       const errorStr = error instanceof Error ? error.message : String(error);
       const match = errorStr.match(/retry after (\d+)/i);

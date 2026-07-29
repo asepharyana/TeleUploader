@@ -778,25 +778,34 @@ const handleHeadObject = async (
 };
 
 /**
- * Streams the request body to a temporary file while computing its SHA-256 hash.
+ * Streams the request body to a temporary file while computing its SHA-256
+ * and MD5 hashes.
  *
  * Unlike `req.arrayBuffer()`, this approach uses O(1) memory regardless of
  * file size, making it safe for multi-GB Docker registry layer blobs.
  *
+ * MD5 is computed alongside SHA-256 so that Content-MD5 verification (when
+ * the header is present) does not need to re-read the entire file.
+ *
  * @param body - The ReadableStream from the HTTP request body.
- * @returns The temp file path, SHA-256 hash, total size, and signature bytes.
+ * @returns The temp file path, SHA-256 hash, MD5 hash (base64), total size, and signature bytes.
  */
 const streamBodyToTemp = async (
   body: ReadableStream<Uint8Array> | null,
 ): Promise<{
   tempPath: string;
   fileHash: string;
+  md5Hash: string;
   sizeBytes: number;
   signatureBuffer: Buffer;
 }> => {
   const tempPath = `/tmp/filedrop-s3-${nanoid()}`;
   const writer = Bun.file(tempPath).writer();
-  const hasher = new Bun.CryptoHasher('sha256');
+  const sha256 = new Bun.CryptoHasher('sha256');
+  const md5 = new Bun.CryptoHasher('md5');
+  let writerFailed = false;
+
+  // Handle body being null (GET/HEAD/DELETE or empty PUT)
   const reader = (
     body ??
     new ReadableStream({
@@ -816,7 +825,8 @@ const streamBodyToTemp = async (
       if (done) break;
       const chunk = Buffer.from(value);
       sizeBytes += chunk.byteLength;
-      hasher.update(chunk);
+      sha256.update(chunk);
+      md5.update(chunk);
       writer.write(chunk);
 
       if (signatureBytes < SIGNATURE_BYTES) {
@@ -827,16 +837,27 @@ const streamBodyToTemp = async (
       }
     }
 
-    writer.end();
+    try {
+      writer.end();
+    } catch {
+      writerFailed = true;
+    }
 
     return {
       tempPath,
-      fileHash: hasher.digest('hex'),
+      fileHash: sha256.digest('hex'),
+      md5Hash: md5.digest('base64'),
       sizeBytes,
       signatureBuffer: Buffer.concat(signatureChunks, signatureBytes),
     };
   } catch (error) {
-    writer.end();
+    if (!writerFailed) {
+      try {
+        writer.end();
+      } catch {
+        /* writer may already be errored */
+      }
+    }
     await cleanupTempFile(tempPath);
     throw error;
   } finally {
@@ -926,25 +947,17 @@ const handlePutObject = async (
     }
   }
 
-  // Content-MD5 validation: verify MD5 when Content-MD5 header is present
+  // Content-MD5 validation: use pre-computed MD5 from streaming (no OOM re-read)
   const contentMd5 = headers['content-md5'];
-  if (contentMd5) {
-    const computedMd5 = Buffer.from(
-      await crypto.subtle.digest(
-        'MD5',
-        new Uint8Array(await Bun.file(streamed.tempPath).arrayBuffer()),
-      ),
-    ).toString('base64');
-    if (contentMd5 !== computedMd5) {
-      await cleanupTempFile(streamed.tempPath);
-      return s3ErrorResponse(
-        'BadDigest',
-        'The Content-MD5 you specified did not match what we received.',
-        `/${bucket}/${key}`,
-        400,
-        reqId,
-      );
-    }
+  if (contentMd5 && contentMd5 !== streamed.md5Hash) {
+    await cleanupTempFile(streamed.tempPath);
+    return s3ErrorResponse(
+      'BadDigest',
+      'The Content-MD5 you specified did not match what we received.',
+      `/${bucket}/${key}`,
+      400,
+      reqId,
+    );
   }
 
   // M12: Reject oversized bodies
@@ -960,17 +973,17 @@ const handlePutObject = async (
   }
 
   // Idempotent PUT: if the object already exists, skip upload
-  const existing = await findFileByBucketAndKey(bucketRecord.id, key);
-  if (existing) {
-    await cleanupTempFile(streamed.tempPath);
-    return s3Response(null, 200, reqId, { etag: `"${streamed.fileHash}"` });
-  }
-
   try {
+    const existing = await findFileByBucketAndKey(bucketRecord.id, key);
+    if (existing) {
+      await cleanupTempFile(streamed.tempPath);
+      return s3Response(null, 200, reqId, { etag: `"${streamed.fileHash}"` });
+    }
+
     return await storeFileFromTemp(streamed, key, bucketRecord, contentType, reqId);
-  } catch (uploadError) {
+  } catch (error) {
     await cleanupTempFile(streamed.tempPath);
-    throw uploadError;
+    throw error;
   }
 };
 
@@ -1022,11 +1035,15 @@ const storeFileFromTemp = async (
     return s3Response(null, 200, reqId, { etag: `"${file.fileHash}"` });
   }
 
-  const forwardResult = await botPool.forwardToStorage(
-    createReadStream(streamed.tempPath),
-    partFileNamePrefix,
-    'document',
-  );
+  const fileStream = createReadStream(streamed.tempPath);
+  let forwardResult: ForwardResult;
+  try {
+    forwardResult = await botPool.forwardToStorage(fileStream, partFileNamePrefix, 'document');
+  } catch (error) {
+    fileStream.destroy();
+    throw error;
+  }
+  fileStream.destroy();
 
   const publicId = nanoid();
   const { db, files: fileSchema } = await import('../../../db/index');

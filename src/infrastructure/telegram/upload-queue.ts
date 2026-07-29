@@ -3,6 +3,13 @@ import { config } from '../../env';
 import logger from '../../shared/logger/index';
 
 /**
+ * Maximum number of pending (queued + in-flight) upload tasks before
+ * new submissions are rejected. Prevents unbounded memory growth when
+ * Telegram is slow or unavailable.
+ */
+const MAX_QUEUE_PENDING = 1000;
+
+/**
  * P-queue instance for serialising Telegram upload tasks.
  *
  * Concurrency is governed by {@link config.uploadConcurrency}.
@@ -16,7 +23,11 @@ const uploadQueue = new PQueue({
 uploadQueue.on('add', () => {
   const stats = getQueueStats();
   if (stats.size > 5) {
-    logger.warn('Upload queue building up', { pending: stats.pending, size: stats.size });
+    logger.warn('Upload queue building up', {
+      pending: stats.pending,
+      size: stats.size,
+      max: MAX_QUEUE_PENDING,
+    });
   }
 });
 
@@ -34,6 +45,14 @@ uploadQueue.on('next', () => {
  * @returns A promise that resolves with the task's result.
  */
 export const enqueueUpload = <T>(task: () => Promise<T>): Promise<T> => {
+  const stats = getQueueStats();
+  if (stats.pending + stats.size > MAX_QUEUE_PENDING) {
+    return Promise.reject(
+      new Error(
+        `Upload queue full (${stats.pending + stats.size} pending, max ${MAX_QUEUE_PENDING})`,
+      ),
+    );
+  }
   return uploadQueue.add(task);
 };
 
