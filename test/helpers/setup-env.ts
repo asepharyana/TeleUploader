@@ -10,12 +10,11 @@
  * defaults in `src/env.ts` and are not touched.
  */
 
-process.env.BOT_TOKEN ||= '123456:ABC-DEF';
+process.env.BOT_TOKENS ||= '123456:ABC-DEF,789012:GHI-JKL,345678:MNO-PQR';
 process.env.STORAGE_CHANNEL_ID ||= '-1001234567890';
 process.env.BASE_URL ||= 'https://example.com';
 process.env.DATABASE_URL ||= 'postgresql://user:pass@localhost:5432/test';
 process.env.PORT ||= '3000';
 process.env.NODE_ENV = 'test';
 
-// Add mock additional bot tokens so multi-bot rotation logic is tested too
-process.env.ADDITIONAL_BOT_TOKENS ||= '789012:GHI-JKL,345678:MNO-PQR';
+// Keep old env names for backward compat with tests that reference them directly

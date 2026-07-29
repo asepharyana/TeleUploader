@@ -1,8 +1,8 @@
 import logger from './utils/logger';
 
 interface AppConfig {
-  botToken: string;
-  additionalBotTokens: string[];
+  /** All bot tokens merged from BOT_TOKENS (or BOT_TOKEN + ADDITIONAL_BOT_TOKENS fallback) */
+  botTokens: string[];
   storageChatId: number;
   baseUrl: string;
   databaseUrl: string;
@@ -28,8 +28,21 @@ interface AppConfig {
   s3VhostDomains: string[];
 }
 
+// Validate bot tokens: BOT_TOKENS (new) or fallback to BOT_TOKEN + ADDITIONAL_BOT_TOKENS
+const botTokensRaw =
+  process.env.BOT_TOKENS ||
+  [process.env.BOT_TOKEN, process.env.ADDITIONAL_BOT_TOKENS].filter(Boolean).join(',');
+
+if (!botTokensRaw) {
+  logger.error(
+    'Missing required environment variables: BOT_TOKENS (or BOT_TOKEN + ADDITIONAL_BOT_TOKENS)',
+  );
+  throw new Error(
+    'Missing environment variables: BOT_TOKENS (or BOT_TOKEN + ADDITIONAL_BOT_TOKENS)',
+  );
+}
+
 const requiredEnv = {
-  BOT_TOKEN: process.env.BOT_TOKEN,
   STORAGE_CHANNEL_ID: process.env.STORAGE_CHANNEL_ID,
   BASE_URL: process.env.BASE_URL,
   DATABASE_URL: process.env.DATABASE_URL,
@@ -93,8 +106,7 @@ const maskDatabaseUrl = (value: string): string =>
   value.replace(/:\/\/([^:]+):([^@]+)@/, '://$1:***@');
 
 export const config: AppConfig = {
-  botToken: process.env.BOT_TOKEN!,
-  additionalBotTokens: parseTokens(process.env.ADDITIONAL_BOT_TOKENS),
+  botTokens: parseTokens(botTokensRaw),
   storageChatId: parseInt(process.env.STORAGE_CHANNEL_ID!, 10),
   baseUrl: process.env.BASE_URL!,
   databaseUrl: process.env.DATABASE_URL!,
@@ -126,8 +138,7 @@ export const config: AppConfig = {
 logger.info('Environment variables loaded', {
   config: {
     ...config,
-    botToken: maskSecret(config.botToken),
-    additionalBotTokens: config.additionalBotTokens.map(maskSecret),
+    botTokens: config.botTokens.map(maskSecret),
     databaseUrl: maskDatabaseUrl(config.databaseUrl),
     adminApiToken: maskSecret(config.adminApiToken),
     adminApiTokenEnabled: config.adminApiToken.length > 0,

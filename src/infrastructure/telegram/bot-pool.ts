@@ -64,7 +64,7 @@ export class BotPool implements ITelegramService {
   private readonly bots: BotEntry[] = [];
 
   constructor() {
-    const tokens = Array.from(new Set([config.botToken, ...config.additionalBotTokens]));
+    const tokens = Array.from(new Set(config.botTokens));
     this.bots = tokens.map((token, index) => ({
       index,
       token,

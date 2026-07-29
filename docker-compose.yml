@@ -4,8 +4,7 @@ services:
     container_name: filedrop-app
     restart: always
     environment:
-      - BOT_TOKEN=${BOT_TOKEN}
-      - ADDITIONAL_BOT_TOKENS=${ADDITIONAL_BOT_TOKENS:-}
+      - BOT_TOKENS=${BOT_TOKENS}
       - STORAGE_CHANNEL_ID=${STORAGE_CHANNEL_ID}
       - BASE_URL=${BASE_URL}
       - DATABASE_URL=${DATABASE_URL}
@@ -13,7 +12,6 @@ services:
       - NODE_ENV=production
       - LOG_LEVEL=info
       - TRUST_PROXY=true
-      - UPLOAD_CONCURRENCY=${UPLOAD_CONCURRENCY:-8}
       - BATCH_MAX_ITEMS=${BATCH_MAX_ITEMS:-20}
       - BATCH_MAX_SIZE_BYTES=${BATCH_MAX_SIZE_BYTES:-524288000}
       - MAX_REQUEST_BODY_BYTES=${MAX_REQUEST_BODY_BYTES:-2147483648}

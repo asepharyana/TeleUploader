@@ -3,7 +3,7 @@ import { config } from '../src/env';
 
 describe('Environment Variables Validation', () => {
   it('config should have all required fields', () => {
-    expect(config).toHaveProperty('botToken');
+    expect(config).toHaveProperty('botTokens');
     expect(config).toHaveProperty('storageChatId');
     expect(config).toHaveProperty('baseUrl');
     expect(config).toHaveProperty('databaseUrl');
@@ -17,8 +17,9 @@ describe('Environment Variables Validation', () => {
     expect(config).toHaveProperty('sessionMaxAgeMs');
   });
 
-  it('config.botToken should return BOT_TOKEN from process.env', () => {
-    expect(config.botToken).toBe(process.env.BOT_TOKEN || '');
+  it('config.botTokens should return array from BOT_TOKENS env', () => {
+    expect(Array.isArray(config.botTokens)).toBe(true);
+    expect(config.botTokens.length).toBeGreaterThanOrEqual(3);
   });
 
   it('config.storageChatId should be parsed as integer from STORAGE_CHANNEL_ID', () => {
@@ -52,10 +53,10 @@ describe('Environment Variables Validation', () => {
     expect(config.sessionMaxAgeMs).toBe(86400 * 1000);
   });
 
-  it('additionalBotTokens should be populated in test environment', () => {
-    expect(Array.isArray(config.additionalBotTokens)).toBe(true);
-    // With mock tokens from setup-env.ts there should be 2 additional tokens
-    expect(config.additionalBotTokens.length).toBeGreaterThanOrEqual(2);
+  it('botTokens should be populated in test environment', () => {
+    expect(Array.isArray(config.botTokens)).toBe(true);
+    // With mock tokens from setup-env.ts there should be at least 3 tokens
+    expect(config.botTokens.length).toBeGreaterThanOrEqual(3);
   });
 
   it('S3 validation should not throw — env already loaded without error at import time', () => {

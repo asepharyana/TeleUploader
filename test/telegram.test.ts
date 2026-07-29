@@ -148,7 +148,7 @@ describe('Telegram API Utilities', () => {
         file_size: 98765,
         mime_type: 'image/jpeg',
         file_path: 'photos/file_0.jpg',
-        bot_token: config.botToken,
+        bot_token: config.botTokens[0],
       });
     });
   });

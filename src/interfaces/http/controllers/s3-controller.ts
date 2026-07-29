@@ -8,6 +8,7 @@ import {
   listObjectsByPrefix,
   softDeleteFile,
 } from '../../../db/files-ext';
+import { db, files as fileSchema } from '../../../db/index';
 import {
   abortMultipartUpload,
   completeMultipartUpload,
@@ -1082,7 +1083,6 @@ const storeFileFromTemp = async (
   fileStream.destroy();
 
   const publicId = nanoid();
-  const { db, files: fileSchema } = await import('../../../db/index');
 
   await db.insert(fileSchema).values({
     publicId,
@@ -1194,7 +1194,6 @@ const handleCopyObject = async (
   }
 
   const publicId = nanoid();
-  const { db, files: fileSchema } = await import('../../../db/index');
 
   await db.insert(fileSchema).values({
     publicId,
@@ -1679,7 +1678,6 @@ const handleCompleteMultipartUpload = async (
   const combinedEtag = storedParts.map((p) => p.etag).join('-');
 
   const publicId = nanoid();
-  const { db, files: fileSchema } = await import('../../../db/index');
 
   // M7: Use stored content-type from the multipart record if available
   const mimeType = multipart.contentType || 'application/octet-stream';
