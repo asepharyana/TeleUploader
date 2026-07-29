@@ -205,11 +205,14 @@ export class BotPool implements ITelegramService {
 
         if (attempt <= MAX_TRANSIENT_RETRIES && isTransientError(error)) {
           const backoffMs = Math.min(1000 * 2 ** attempt, 10_000);
-          logger.warn(`Transient error forwarding file, retrying (${attempt}/${MAX_TRANSIENT_RETRIES})`, {
-            fileName,
-            error: errorStr,
-            backoffMs,
-          });
+          logger.warn(
+            `Transient error forwarding file, retrying (${attempt}/${MAX_TRANSIENT_RETRIES})`,
+            {
+              fileName,
+              error: errorStr,
+              backoffMs,
+            },
+          );
           await sleep(backoffMs);
           continue;
         }

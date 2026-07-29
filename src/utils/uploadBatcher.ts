@@ -3,8 +3,8 @@ import { nanoid } from 'nanoid';
 import { db, files as fileSchema } from '../db';
 import type { NewFile } from '../db/schema';
 import { config } from '../env';
-import { cleanupTempFile } from './file';
 import { botPool } from '../infrastructure/telegram/bot-pool';
+import { cleanupTempFile } from './file';
 import { createZip, type ZipEntry } from './zip';
 
 export type PreparedUpload = {

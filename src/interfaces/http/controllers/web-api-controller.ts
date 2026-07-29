@@ -8,13 +8,13 @@ import {
   listObjectsByPrefix,
   softDeleteFile,
 } from '../../../db/files-ext';
+import { botPool } from '../../../infrastructure/telegram/bot-pool';
 import logger from '../../../shared/logger/index';
 import { cleanupTempFile, ensureExtension, getErrorMessage } from '../../../shared/utils/file';
 import {
   createChunkedObjectResponse,
   storeFileInTelegramChunks,
 } from '../../../utils/chunked-storage';
-import { botPool } from '../../../infrastructure/telegram/bot-pool';
 
 /**
  * Route parameters extracted from the URL path.

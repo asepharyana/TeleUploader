@@ -6,10 +6,10 @@ import { db, files as fileSchema } from '../db';
 import { insertFileParts, listFileParts, type NewFilePartInput } from '../db/file-parts';
 import type { File } from '../db/schema';
 import { config } from '../env';
+import { botPool } from '../infrastructure/telegram/bot-pool';
 import { computeHash } from './file';
 import { createGetObjectResponse, type ObjectPartSource } from './s3/object-stream';
 import type { RangeParseResult } from './s3/range';
-import { botPool } from '../infrastructure/telegram/bot-pool';
 
 export type ChunkCompressionAlgorithm = 'gzip' | null;
 

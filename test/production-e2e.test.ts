@@ -230,254 +230,254 @@ describe('S3 API (production, SigV4)', () => {
       console.info('ℹ️  S3_SKIP: S3_SECRET_KEY not set — skipping S3 tests');
     });
   } else {
+    const bucketName = `e2e-s3-${TS}`;
 
-  const bucketName = `e2e-s3-${TS}`;
-
-  it('ListBuckets (GET /)', async () => {
-    const r = await s3Request('GET', '/');
-    expect(r.status).toBe(200);
-    const xml = await r.text();
-    expect(xml).toContain('ListAllMyBucketsResult');
-  });
-
-  it('CreateBucket (PUT /{bucket})', async () => {
-    const r = await s3Request('PUT', `/${bucketName}`);
-    expect(r.status).toBe(200);
-    createdBuckets.push(bucketName);
-  });
-
-  it('HeadBucket (HEAD /{bucket})', async () => {
-    const r = await s3Request('HEAD', `/${bucketName}`);
-    expect(r.status).toBe(200);
-  });
-
-  it('PutObject (PUT /{bucket}/{key})', async () => {
-    const r = await s3Request('PUT', `/${bucketName}/test-file.txt`, {
-      body: new TextEncoder().encode('hello s3'),
-    });
-    expect(r.status).toBe(200);
-    expect(r.headers.get('etag')).toBeTruthy();
-  });
-
-  it('PutObject — nested folder key', async () => {
-    const r = await s3Request('PUT', `/${bucketName}/folder/nested.txt`, {
-      body: new TextEncoder().encode('nested'),
-    });
-    expect(r.status).toBe(200);
-  });
-
-  it('HeadObject (HEAD /{bucket}/{key})', async () => {
-    const r = await s3Request('HEAD', `/${bucketName}/test-file.txt`);
-    expect(r.status).toBe(200);
-    expect(r.headers.get('etag')).toBeTruthy();
-    expect(Number(r.headers.get('content-length'))).toBeGreaterThan(0);
-  });
-
-  it('GetObject (GET /{bucket}/{key}) — proxies content from Telegram', async () => {
-    const r = await s3Request('GET', `/${bucketName}/test-file.txt`);
-    expect(r.status).toBe(200);
-    const text = await r.text();
-    expect(text).toContain('hello s3');
-    expect(r.headers.get('content-type')).toMatch(/text|octet/);
-  });
-
-  it('ListObjectsV1 (GET /{bucket})', async () => {
-    const r = await s3Request('GET', `/${bucketName}`);
-    expect(r.status).toBe(200);
-    const xml = await r.text();
-    expect(xml).toContain('ListBucketResult');
-    expect(xml).toContain('test-file.txt');
-    expect(xml).toContain('folder/nested.txt');
-  });
-
-  it('ListObjectsV1 — prefix filter', async () => {
-    const r = await s3Request('GET', `/${bucketName}`, { query: { prefix: 'folder/' } });
-    expect(r.status).toBe(200);
-    const xml = await r.text();
-    expect(xml).toContain('folder/nested.txt');
-    expect(xml).not.toContain('test-file.txt');
-  });
-
-  it('ListObjectsV2 (GET /{bucket}?list-type=2)', async () => {
-    const r = await s3Request('GET', `/${bucketName}`, { query: { 'list-type': '2' } });
-    expect(r.status).toBe(200);
-    const xml = await r.text();
-    expect(xml).toContain('ListBucketResultV2');
-    expect(xml).toContain('KeyCount');
-  });
-
-  it('ListObjectsV2 — continuation', async () => {
-    const r = await s3Request('GET', `/${bucketName}`, {
-      query: { 'list-type': '2', 'max-keys': '1' },
-    });
-    expect(r.status).toBe(200);
-    const xml = await r.text();
-    expect(xml).toContain('IsTruncated');
-  });
-
-  it('DeleteObject (DELETE /{bucket}/{key})', async () => {
-    const r = await s3Request('DELETE', `/${bucketName}/folder/nested.txt`);
-    expect(r.status).toBe(204);
-  });
-
-  it('DeleteObjects (POST /{bucket}?delete) — batch', async () => {
-    const content = new TextEncoder().encode('del');
-    await s3Request('PUT', `/${bucketName}/batch-1.txt`, { body: content });
-    await s3Request('PUT', `/${bucketName}/batch-2.txt`, { body: content });
-    const deleteBody =
-      '<Delete><Object><Key>batch-1.txt</Key></Object><Object><Key>batch-2.txt</Key></Object></Delete>';
-    const r = await s3Request('POST', `/${bucketName}`, {
-      query: { delete: '' },
-      body: new TextEncoder().encode(deleteBody),
-    });
-    expect(r.status).toBe(200);
-    const xml = await r.text();
-    expect(xml).toContain('DeleteResult');
-  });
-
-  it('CopyObject (PUT /{dest} with x-amz-copy-source)', async () => {
-    const r = await s3Request('PUT', `/${bucketName}/copy-dest.txt`, {
-      headers: { 'x-amz-copy-source': `/${bucketName}/test-file.txt` },
-    });
-    expect(r.status).toBe(200);
-    const xml = await r.text();
-    expect(xml).toContain('CopyObjectResult');
-  });
-
-  it('Presigned URL — GET with X-Amz-Signature', async () => {
-    // Use s3Request to compute a presigned URL signature — verify the object
-    await s3Request('PUT', `/${bucketName}/presigned-test.txt`, {
-      body: new TextEncoder().encode('presigned content'),
+    it('ListBuckets (GET /)', async () => {
+      const r = await s3Request('GET', '/');
+      expect(r.status).toBe(200);
+      const xml = await r.text();
+      expect(xml).toContain('ListAllMyBucketsResult');
     });
 
-    const host = new URL(BASE_URL).host;
-    const now = new Date();
-    const pad2 = (n: number) => String(n).padStart(2, '0');
-    const amzDate = `${now.getUTCFullYear()}${pad2(now.getUTCMonth() + 1)}${pad2(now.getUTCDate())}T${pad2(now.getUTCHours())}${pad2(now.getUTCMinutes())}${pad2(now.getUTCSeconds())}Z`;
-    const dateStamp = amzDate.slice(0, 8);
-
-    // Build canonical query string (must match server's buildCanonicalQueryString)
-    const sp = new URLSearchParams({
-      'X-Amz-Algorithm': 'AWS4-HMAC-SHA256',
-      'X-Amz-Credential': `${S3_KEY}/${dateStamp}/us-east-1/s3/aws4_request`,
-      'X-Amz-Date': amzDate,
-      'X-Amz-Expires': '3600',
-      'X-Amz-SignedHeaders': 'host',
+    it('CreateBucket (PUT /{bucket})', async () => {
+      const r = await s3Request('PUT', `/${bucketName}`);
+      expect(r.status).toBe(200);
+      createdBuckets.push(bucketName);
     });
-    // Sort keys to match server's alphabetical sort
-    const sorted = [...sp.entries()].sort(([a], [b]) => a.localeCompare(b));
-    const canonicalQs = sorted
-      .map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(v)}`)
-      .join('&');
 
-    const canonical = `GET\n/${bucketName}/presigned-test.txt\n${canonicalQs}\nhost:${host}\n\nhost\nUNSIGNED-PAYLOAD`;
-    const hcr = sha256hex(canonical);
-    const cs = `${dateStamp}/us-east-1/s3/aws4_request`;
-    const sts = `AWS4-HMAC-SHA256\n${amzDate}\n${cs}\n${hcr}`;
-    const sk = getSigningKey(S3_SECRET, dateStamp, 'us-east-1');
-    const sig = hex(hmacSha256(sk, sts));
-
-    sp.set('X-Amz-Signature', sig);
-    const presignedUrl = `${BASE_URL}/${bucketName}/presigned-test.txt?${sp.toString()}`;
-
-    const r = await fetch(presignedUrl);
-    expect(r.status).toBe(200);
-    const text = await r.text();
-    expect(text).toContain('presigned content');
-  });
-
-  it('GetObject Range — returns partial single-part content', async () => {
-    const r = await s3Request('GET', `/${bucketName}/test-file.txt`, {
-      headers: { range: 'bytes=0-4' },
+    it('HeadBucket (HEAD /{bucket})', async () => {
+      const r = await s3Request('HEAD', `/${bucketName}`);
+      expect(r.status).toBe(200);
     });
-    expect(r.status).toBe(206);
-    expect(r.headers.get('content-range')).toBe('bytes 0-4/8');
-    expect(await r.text()).toBe('hello');
-  });
 
-  it('GetObject Range — invalid range returns 416 XML', async () => {
-    const r = await s3Request('GET', `/${bucketName}/test-file.txt`, {
-      headers: { range: 'bytes=999-1000' },
+    it('PutObject (PUT /{bucket}/{key})', async () => {
+      const r = await s3Request('PUT', `/${bucketName}/test-file.txt`, {
+        body: new TextEncoder().encode('hello s3'),
+      });
+      expect(r.status).toBe(200);
+      expect(r.headers.get('etag')).toBeTruthy();
     });
-    expect(r.status).toBe(416);
-    expect(r.headers.get('content-range')).toBe('bytes */8');
-    const xml = await r.text();
-    expect(xml).toContain('InvalidRange');
-  });
 
-  it('Multipart GetObject — returns complete concatenated body', async () => {
-    const create = await s3Request('POST', `/${bucketName}/multipart-full.txt`, {
-      query: { uploads: '' },
+    it('PutObject — nested folder key', async () => {
+      const r = await s3Request('PUT', `/${bucketName}/folder/nested.txt`, {
+        body: new TextEncoder().encode('nested'),
+      });
+      expect(r.status).toBe(200);
     });
-    expect(create.status).toBe(200);
-    const createXml = await create.text();
-    const uploadId = createXml.match(/<UploadId>([^<]+)<\/UploadId>/)?.[1];
-    expect(uploadId).toBeTruthy();
 
-    const part1 = new TextEncoder().encode('hello ');
-    const part2 = new TextEncoder().encode('multipart');
-    const p1 = await s3Request('PUT', `/${bucketName}/multipart-full.txt`, {
-      query: { partNumber: '1', uploadId: uploadId! },
-      body: part1,
+    it('HeadObject (HEAD /{bucket}/{key})', async () => {
+      const r = await s3Request('HEAD', `/${bucketName}/test-file.txt`);
+      expect(r.status).toBe(200);
+      expect(r.headers.get('etag')).toBeTruthy();
+      expect(Number(r.headers.get('content-length'))).toBeGreaterThan(0);
     });
-    const p2 = await s3Request('PUT', `/${bucketName}/multipart-full.txt`, {
-      query: { partNumber: '2', uploadId: uploadId! },
-      body: part2,
+
+    it('GetObject (GET /{bucket}/{key}) — proxies content from Telegram', async () => {
+      const r = await s3Request('GET', `/${bucketName}/test-file.txt`);
+      expect(r.status).toBe(200);
+      const text = await r.text();
+      expect(text).toContain('hello s3');
+      expect(r.headers.get('content-type')).toMatch(/text|octet/);
     });
-    expect(p1.status).toBe(200);
-    expect(p2.status).toBe(200);
 
-    const completeBody = `<CompleteMultipartUpload><Part><PartNumber>1</PartNumber><ETag>${p1.headers.get('etag')}</ETag></Part><Part><PartNumber>2</PartNumber><ETag>${p2.headers.get('etag')}</ETag></Part></CompleteMultipartUpload>`;
-    const complete = await s3Request('POST', `/${bucketName}/multipart-full.txt`, {
-      query: { uploadId: uploadId! },
-      body: new TextEncoder().encode(completeBody),
+    it('ListObjectsV1 (GET /{bucket})', async () => {
+      const r = await s3Request('GET', `/${bucketName}`);
+      expect(r.status).toBe(200);
+      const xml = await r.text();
+      expect(xml).toContain('ListBucketResult');
+      expect(xml).toContain('test-file.txt');
+      expect(xml).toContain('folder/nested.txt');
     });
-    expect(complete.status).toBe(200);
 
-    const full = await s3Request('GET', `/${bucketName}/multipart-full.txt`);
-    expect(full.status).toBe(200);
-    expect(await full.text()).toBe('hello multipart');
-
-    const partial = await s3Request('GET', `/${bucketName}/multipart-full.txt`, {
-      headers: { range: 'bytes=3-9' },
+    it('ListObjectsV1 — prefix filter', async () => {
+      const r = await s3Request('GET', `/${bucketName}`, { query: { prefix: 'folder/' } });
+      expect(r.status).toBe(200);
+      const xml = await r.text();
+      expect(xml).toContain('folder/nested.txt');
+      expect(xml).not.toContain('test-file.txt');
     });
-    expect(partial.status).toBe(206);
-    expect(partial.headers.get('content-range')).toBe('bytes 3-9/15');
-    expect(await partial.text()).toBe('lo mult');
-  });
 
-  it('Delete bucket — must be empty first', async () => {
-    // Clean up remaining objects
-    await s3Request('DELETE', `/${bucketName}/test-file.txt`);
-    await s3Request('DELETE', `/${bucketName}/copy-dest.txt`);
-    await s3Request('DELETE', `/${bucketName}/presigned-test.txt`);
-    await s3Request('DELETE', `/${bucketName}/multipart-full.txt`);
-
-    const r = await s3Request('DELETE', `/${bucketName}`);
-    expect(r.status).toBe(204);
-    createdBuckets = createdBuckets.filter((b) => b !== bucketName);
-  });
-
-  it('S3 error — NoSuchBucket returns 404 XML', async () => {
-    const r = await s3Request('GET', '/bucket-nonexistent-xyz');
-    expect(r.status).toBe(404);
-    const xml = await r.text();
-    expect(xml).toContain('NoSuchBucket');
-  });
-
-  it('S3 error — bad signature returns 403', async () => {
-    const r = await fetch(`${BASE_URL}/`, {
-      headers: {
-        Authorization:
-          'AWS4-HMAC-SHA256 Credential=fake/20260701/us-east-1/s3/aws4_request, SignedHeaders=host, Signature=00',
-        'x-amz-date': '20260701T000000Z',
-        'x-amz-content-sha256': 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855',
-      },
+    it('ListObjectsV2 (GET /{bucket}?list-type=2)', async () => {
+      const r = await s3Request('GET', `/${bucketName}`, { query: { 'list-type': '2' } });
+      expect(r.status).toBe(200);
+      const xml = await r.text();
+      expect(xml).toContain('ListBucketResultV2');
+      expect(xml).toContain('KeyCount');
     });
-    expect(r.status).toBe(403);
-    const xml = await r.text();
-    expect(xml).toContain('Error');
-  });
+
+    it('ListObjectsV2 — continuation', async () => {
+      const r = await s3Request('GET', `/${bucketName}`, {
+        query: { 'list-type': '2', 'max-keys': '1' },
+      });
+      expect(r.status).toBe(200);
+      const xml = await r.text();
+      expect(xml).toContain('IsTruncated');
+    });
+
+    it('DeleteObject (DELETE /{bucket}/{key})', async () => {
+      const r = await s3Request('DELETE', `/${bucketName}/folder/nested.txt`);
+      expect(r.status).toBe(204);
+    });
+
+    it('DeleteObjects (POST /{bucket}?delete) — batch', async () => {
+      const content = new TextEncoder().encode('del');
+      await s3Request('PUT', `/${bucketName}/batch-1.txt`, { body: content });
+      await s3Request('PUT', `/${bucketName}/batch-2.txt`, { body: content });
+      const deleteBody =
+        '<Delete><Object><Key>batch-1.txt</Key></Object><Object><Key>batch-2.txt</Key></Object></Delete>';
+      const r = await s3Request('POST', `/${bucketName}`, {
+        query: { delete: '' },
+        body: new TextEncoder().encode(deleteBody),
+      });
+      expect(r.status).toBe(200);
+      const xml = await r.text();
+      expect(xml).toContain('DeleteResult');
+    });
+
+    it('CopyObject (PUT /{dest} with x-amz-copy-source)', async () => {
+      const r = await s3Request('PUT', `/${bucketName}/copy-dest.txt`, {
+        headers: { 'x-amz-copy-source': `/${bucketName}/test-file.txt` },
+      });
+      expect(r.status).toBe(200);
+      const xml = await r.text();
+      expect(xml).toContain('CopyObjectResult');
+    });
+
+    it('Presigned URL — GET with X-Amz-Signature', async () => {
+      // Use s3Request to compute a presigned URL signature — verify the object
+      await s3Request('PUT', `/${bucketName}/presigned-test.txt`, {
+        body: new TextEncoder().encode('presigned content'),
+      });
+
+      const host = new URL(BASE_URL).host;
+      const now = new Date();
+      const pad2 = (n: number) => String(n).padStart(2, '0');
+      const amzDate = `${now.getUTCFullYear()}${pad2(now.getUTCMonth() + 1)}${pad2(now.getUTCDate())}T${pad2(now.getUTCHours())}${pad2(now.getUTCMinutes())}${pad2(now.getUTCSeconds())}Z`;
+      const dateStamp = amzDate.slice(0, 8);
+
+      // Build canonical query string (must match server's buildCanonicalQueryString)
+      const sp = new URLSearchParams({
+        'X-Amz-Algorithm': 'AWS4-HMAC-SHA256',
+        'X-Amz-Credential': `${S3_KEY}/${dateStamp}/us-east-1/s3/aws4_request`,
+        'X-Amz-Date': amzDate,
+        'X-Amz-Expires': '3600',
+        'X-Amz-SignedHeaders': 'host',
+      });
+      // Sort keys to match server's alphabetical sort
+      const sorted = [...sp.entries()].sort(([a], [b]) => a.localeCompare(b));
+      const canonicalQs = sorted
+        .map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(v)}`)
+        .join('&');
+
+      const canonical = `GET\n/${bucketName}/presigned-test.txt\n${canonicalQs}\nhost:${host}\n\nhost\nUNSIGNED-PAYLOAD`;
+      const hcr = sha256hex(canonical);
+      const cs = `${dateStamp}/us-east-1/s3/aws4_request`;
+      const sts = `AWS4-HMAC-SHA256\n${amzDate}\n${cs}\n${hcr}`;
+      const sk = getSigningKey(S3_SECRET, dateStamp, 'us-east-1');
+      const sig = hex(hmacSha256(sk, sts));
+
+      sp.set('X-Amz-Signature', sig);
+      const presignedUrl = `${BASE_URL}/${bucketName}/presigned-test.txt?${sp.toString()}`;
+
+      const r = await fetch(presignedUrl);
+      expect(r.status).toBe(200);
+      const text = await r.text();
+      expect(text).toContain('presigned content');
+    });
+
+    it('GetObject Range — returns partial single-part content', async () => {
+      const r = await s3Request('GET', `/${bucketName}/test-file.txt`, {
+        headers: { range: 'bytes=0-4' },
+      });
+      expect(r.status).toBe(206);
+      expect(r.headers.get('content-range')).toBe('bytes 0-4/8');
+      expect(await r.text()).toBe('hello');
+    });
+
+    it('GetObject Range — invalid range returns 416 XML', async () => {
+      const r = await s3Request('GET', `/${bucketName}/test-file.txt`, {
+        headers: { range: 'bytes=999-1000' },
+      });
+      expect(r.status).toBe(416);
+      expect(r.headers.get('content-range')).toBe('bytes */8');
+      const xml = await r.text();
+      expect(xml).toContain('InvalidRange');
+    });
+
+    it('Multipart GetObject — returns complete concatenated body', async () => {
+      const create = await s3Request('POST', `/${bucketName}/multipart-full.txt`, {
+        query: { uploads: '' },
+      });
+      expect(create.status).toBe(200);
+      const createXml = await create.text();
+      const uploadId = createXml.match(/<UploadId>([^<]+)<\/UploadId>/)?.[1];
+      expect(uploadId).toBeTruthy();
+
+      const part1 = new TextEncoder().encode('hello ');
+      const part2 = new TextEncoder().encode('multipart');
+      const p1 = await s3Request('PUT', `/${bucketName}/multipart-full.txt`, {
+        query: { partNumber: '1', uploadId: uploadId! },
+        body: part1,
+      });
+      const p2 = await s3Request('PUT', `/${bucketName}/multipart-full.txt`, {
+        query: { partNumber: '2', uploadId: uploadId! },
+        body: part2,
+      });
+      expect(p1.status).toBe(200);
+      expect(p2.status).toBe(200);
+
+      const completeBody = `<CompleteMultipartUpload><Part><PartNumber>1</PartNumber><ETag>${p1.headers.get('etag')}</ETag></Part><Part><PartNumber>2</PartNumber><ETag>${p2.headers.get('etag')}</ETag></Part></CompleteMultipartUpload>`;
+      const complete = await s3Request('POST', `/${bucketName}/multipart-full.txt`, {
+        query: { uploadId: uploadId! },
+        body: new TextEncoder().encode(completeBody),
+      });
+      expect(complete.status).toBe(200);
+
+      const full = await s3Request('GET', `/${bucketName}/multipart-full.txt`);
+      expect(full.status).toBe(200);
+      expect(await full.text()).toBe('hello multipart');
+
+      const partial = await s3Request('GET', `/${bucketName}/multipart-full.txt`, {
+        headers: { range: 'bytes=3-9' },
+      });
+      expect(partial.status).toBe(206);
+      expect(partial.headers.get('content-range')).toBe('bytes 3-9/15');
+      expect(await partial.text()).toBe('lo mult');
+    });
+
+    it('Delete bucket — must be empty first', async () => {
+      // Clean up remaining objects
+      await s3Request('DELETE', `/${bucketName}/test-file.txt`);
+      await s3Request('DELETE', `/${bucketName}/copy-dest.txt`);
+      await s3Request('DELETE', `/${bucketName}/presigned-test.txt`);
+      await s3Request('DELETE', `/${bucketName}/multipart-full.txt`);
+
+      const r = await s3Request('DELETE', `/${bucketName}`);
+      expect(r.status).toBe(204);
+      createdBuckets = createdBuckets.filter((b) => b !== bucketName);
+    });
+
+    it('S3 error — NoSuchBucket returns 404 XML', async () => {
+      const r = await s3Request('GET', '/bucket-nonexistent-xyz');
+      expect(r.status).toBe(404);
+      const xml = await r.text();
+      expect(xml).toContain('NoSuchBucket');
+    });
+
+    it('S3 error — bad signature returns 403', async () => {
+      const r = await fetch(`${BASE_URL}/`, {
+        headers: {
+          Authorization:
+            'AWS4-HMAC-SHA256 Credential=fake/20260701/us-east-1/s3/aws4_request, SignedHeaders=host, Signature=00',
+          'x-amz-date': '20260701T000000Z',
+          'x-amz-content-sha256':
+            'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855',
+        },
+      });
+      expect(r.status).toBe(403);
+      const xml = await r.text();
+      expect(xml).toContain('Error');
+    });
   }
 });
 

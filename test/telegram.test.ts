@@ -1,4 +1,5 @@
 import { afterEach, beforeAll, beforeEach, describe, expect, it, mock, spyOn } from 'bun:test';
+import type { ITelegramService } from '../src/domain/ports/telegram-service';
 import { config } from '../src/env';
 import logger from '../src/utils/logger';
 
@@ -65,7 +66,7 @@ const infoSpy = spyOn(logger, 'info');
 const errorSpy = spyOn(logger, 'error');
 
 describe('Telegram API Utilities', () => {
-  let botPool: { forwardToStorage: Function; getFileInfo: Function; enqueueUpload: Function };
+  let botPool: ITelegramService;
 
   beforeEach(async () => {
     infoSpy.mockClear();

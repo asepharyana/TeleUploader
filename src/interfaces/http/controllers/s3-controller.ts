@@ -18,6 +18,7 @@ import {
   listMultipartUploadsByBucket,
 } from '../../../db/multipart';
 import type { File } from '../../../db/schema';
+import { botPool } from '../../../infrastructure/telegram/bot-pool';
 import logger from '../../../shared/logger/index';
 import { cleanupTempFile, ensureExtension, getErrorMessage } from '../../../shared/utils/file';
 import {
@@ -43,7 +44,6 @@ import {
   parseDeleteObjectsBody,
   s3ErrorResponse,
 } from '../../../utils/s3/xml';
-import { botPool } from '../../../infrastructure/telegram/bot-pool';
 
 /**
  * The default S3 region returned when no region is explicitly configured.
