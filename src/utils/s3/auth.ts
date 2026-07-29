@@ -1,4 +1,5 @@
 import { timingSafeEqual } from 'node:crypto';
+import logger from '../../shared/logger/index';
 
 /**
  * Timing-safe string comparison that prevents timing attacks.
@@ -299,8 +300,17 @@ export const verifySignature = async (
 
   const hashedCanonicalRequest = await sha256Hex(canonicalRequest);
 
+  // Debug canonical request for non-root GETs (bucket operations)
+  logger.info('SigV4 canonical request', {
+    method,
+    path: parsedUrl.pathname,
+    signedHeaders: parsed.signedHeaders,
+    hashedPayload: hashedPayload.slice(0, 20) + '...',
+    canReq: canonicalRequest.slice(0, 500),
+  });
+
   // M1: Fall back to Date header if x-amz-date is missing
-  const amzDate = headers['x-amz-date'] || headers.date || '';
+  const amzDate = headers['x-amz-date'] || headers['date'] || '';
 
   // H5: Validate request freshness (clock skew / replay protection)
   if (amzDate) {
