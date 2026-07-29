@@ -50,15 +50,4 @@ export interface ITelegramService {
    * @returns Metadata including size, MIME type, download path, and bot token.
    */
   getFileInfo(telegramFileId: string): Promise<TelegramFileInfo>;
-
-  /**
-   * Enqueue a task for sequential upload execution.
-   *
-   * Ensures only one Telegram upload runs at a time to avoid
-   * rate limits and resource contention.
-   *
-   * @param task - An async function performing the upload.
-   * @returns The result of the task.
-   */
-  enqueueUpload<T>(task: () => Promise<T>): Promise<T>;
 }

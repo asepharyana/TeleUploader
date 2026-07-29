@@ -13,7 +13,6 @@ import {
   sendMethodMap,
   type TelegramMessageResult,
 } from './types';
-import { enqueueUpload } from './upload-queue';
 
 /**
  * Sleep for a given number of milliseconds.
@@ -179,8 +178,7 @@ export class BotPool implements ITelegramService {
   /**
    * Forward a file chunk to the configured Telegram storage chat.
    *
-   * The upload is queued (via {@link enqueueUpload}) and executed with
-   * automatic bot rotation on rate-limit errors.
+   * The upload is executed with automatic bot rotation on rate-limit errors.
    *
    * @param fileChunk - The file data (ReadStream, Buffer, or file path).
    * @param fileName - The original file name.
@@ -198,15 +196,13 @@ export class BotPool implements ITelegramService {
     while (attempt <= MAX_TRANSIENT_RETRIES) {
       attempt++;
       try {
-        const result = await this.enqueueUpload<TelegramMessageResult>(async () => {
-          const filePayload = { source: fileChunk, filename: fileName };
-          const sendMethodName = sendMethodMap[fileType] || 'sendDocument';
-          const payload = buildSendPayload(fileType, fileName);
+        const filePayload = { source: fileChunk, filename: fileName };
+        const sendMethodName = sendMethodMap[fileType] || 'sendDocument';
+        const payload = buildSendPayload(fileType, fileName);
 
-          return this.executeWithBotRetry<TelegramMessageResult>((activeBot) => {
-            const telegram = activeBot.telegram as unknown as Record<string, SendMethod>;
-            return telegram[sendMethodName](config.storageChatId, filePayload, payload);
-          });
+        const result = await this.executeWithBotRetry<TelegramMessageResult>((activeBot) => {
+          const telegram = activeBot.telegram as unknown as Record<string, SendMethod>;
+          return telegram[sendMethodName](config.storageChatId, filePayload, payload);
         });
 
         const uploadedFile = extractUploadedFile(result, fileType);
@@ -301,19 +297,6 @@ export class BotPool implements ITelegramService {
       error: lastError instanceof Error ? lastError.message : String(lastError),
     });
     throw lastError;
-  }
-
-  /**
-   * Enqueue a task for sequential upload execution.
-   *
-   * Delegates to the shared upload queue to ensure only a limited number
-   * of Telegram uploads run concurrently.
-   *
-   * @param task - An async function performing the upload.
-   * @returns The result of the task.
-   */
-  enqueueUpload<T>(task: () => Promise<T>): Promise<T> {
-    return enqueueUpload(task);
   }
 }
 
