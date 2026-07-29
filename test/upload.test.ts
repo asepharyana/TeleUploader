@@ -17,8 +17,6 @@ beforeAll(async () => {
       'hex',
     );
   }
-  // Pre-create temp file for multipart upload test
-  await Bun.write('/tmp/filedrop-test-photo', realPhotoBuffer);
 });
 
 // Mock db
@@ -113,6 +111,7 @@ describe('Upload Route Handler', () => {
     mockFileRepo.create.mockClear();
     mockForwardToStorage.mockClear();
     mockFindByHashResult = null;
+    nanoidCounter = 0;
     const uploadRoute = await import('../src/interfaces/http/controllers/upload-controller');
     handleUpload = uploadRoute.handleUpload;
   });

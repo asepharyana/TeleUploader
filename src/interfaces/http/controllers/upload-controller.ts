@@ -1,3 +1,4 @@
+import { Readable } from 'node:stream';
 import { nanoid } from 'nanoid';
 import { buildNewFile } from '../../../domain/entities/file-factory';
 import { config } from '../../../env';
@@ -206,7 +207,7 @@ const handleMultipartUpload = async (req: Request): Promise<Response> => {
 
     // Single-message — direct to Telegram storage
     const forwardResult = await telegramService.forwardToStorage(
-      Bun.file(prepared.tempPath).stream(),
+      Readable.from(Bun.file(prepared.tempPath).stream()),
       finalFileName,
       fileType,
     );
@@ -318,7 +319,7 @@ const handleJSONUpload = async (req: Request): Promise<Response> => {
 
     // Single-message — direct to Telegram storage
     const forwardResult = await telegramService.forwardToStorage(
-      Bun.file(prepared.tempPath).stream(),
+      Readable.from(Bun.file(prepared.tempPath).stream()),
       finalFileName,
       fileType,
     );
