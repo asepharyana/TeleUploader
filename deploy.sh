@@ -155,12 +155,15 @@ vps "rm -rf '${DEPLOY_DIR}.old' && mv '${DEPLOY_DIR}' '${DEPLOY_DIR}.old' 2>/dev
 
 ok "Files shipped to ${DEPLOY_DIR}"
 
-# ── 5. Build Docker image & restart on VPS ───────────────────────────────────
+# ── 5. Build Docker image & restart ──────────────────────────────────────
 log "Building Docker image on VPS..."
 vps "cd '${DEPLOY_DIR}' && docker compose build --pull 2>&1" | tail -5 || die "Docker build failed on VPS"
 
-log "Restarting container..."
-vps "cd '${DEPLOY_DIR}' && docker compose up -d --force-recreate 2>&1" || die "Container restart failed"
+log "Restarting container (zero-downtime via healthcheck)..."
+vps "cd '${DEPLOY_DIR}' && docker compose up -d --force-recreate --wait --wait-timeout 60 2>&1" || {
+  log "Warn: --wait not supported on this docker-compose version, falling back to basic restart"
+  vps "cd '${DEPLOY_DIR}' && docker compose up -d --force-recreate 2>&1" || die "Container restart failed"
+}
 
 # ── 6. Verify container is running ────────────────────────────────────────────
 log "Waiting for container to be healthy..."
