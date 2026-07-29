@@ -1,7 +1,7 @@
 /**
  * Input for the upload file use case.
  * Carries all metadata needed to persist an uploaded file,
- * including its temporary location on disk and optional bucket/S3 context.
+ * including its temporary location on disk and optional bucket/S3 context.a
  */
 export interface UploadInput {
   /** Absolute path to the temporary file on disk */
