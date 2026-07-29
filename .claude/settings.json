@@ -1,0 +1,12 @@
+{
+  "sessionStartHook": "echo '📁 TeleUploader — Telegram file uploader backend' && echo '   Bun project — use bun, not node/npm/yarn' && echo '   Tests: bun test --preload ./test/helpers/setup-env.ts <file>'",
+  "permissions": {
+    "allow": [
+      "Bun(bun test *)",
+      "Bun(bunx *)",
+      "Bun(bun run *)",
+      "Bun(bun build *)",
+      "Bun(bun install)"
+    ]
+  }
+}

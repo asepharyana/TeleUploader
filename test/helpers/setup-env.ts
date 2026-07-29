@@ -16,3 +16,6 @@ process.env.BASE_URL ||= 'https://example.com';
 process.env.DATABASE_URL ||= 'postgresql://user:pass@localhost:5432/test';
 process.env.PORT ||= '3000';
 process.env.NODE_ENV = 'test';
+
+// Add mock additional bot tokens so multi-bot rotation logic is tested too
+process.env.ADDITIONAL_BOT_TOKENS ||= '789012:GHI-JKL,345678:MNO-PQR';

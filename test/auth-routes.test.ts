@@ -18,7 +18,7 @@ setEnv('SESSION_COOKIE_NAME', 'route_session');
 setEnv('SESSION_COOKIE_MAX_AGE_SECONDS', '3600');
 
 const { createSessionCookie } = await import('../src/utils/auth');
-const { handleLogin, handleLogout, handleMe } = await import('../src/routes/auth');
+const { handleLogin, handleLogout, handleMe } = await import('../src/interfaces/http/controllers/auth-controller');
 
 const jsonBody = async <T>(res: Response): Promise<T> => (await res.json()) as T;
 

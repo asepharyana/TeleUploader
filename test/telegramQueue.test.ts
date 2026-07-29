@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'bun:test';
-import { enqueueUpload } from '../src/utils/telegramQueue';
+import { enqueueUpload } from '../src/infrastructure/telegram/upload-queue';
 
 describe('Telegram Queue', () => {
   it('should process tasks in parallel without limit', async () => {

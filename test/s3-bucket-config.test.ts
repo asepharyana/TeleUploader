@@ -68,10 +68,10 @@ mock.module('../src/utils/telegram', () => ({
 }));
 
 describe('S3 bucket configuration compatibility', () => {
-  let handleS3Request: typeof import('../src/routes/s3').handleS3Request;
+  let handleS3Request: typeof import('../src/interfaces/http/controllers/s3-controller').handleS3Request;
 
   beforeAll(async () => {
-    ({ handleS3Request } = await import('../src/routes/s3'));
+    ({ handleS3Request } = await import('../src/interfaces/http/controllers/s3-controller'));
   });
 
   afterAll(() => {

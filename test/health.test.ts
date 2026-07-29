@@ -3,18 +3,18 @@ import { beforeEach, describe, expect, it, mock } from 'bun:test';
 // Mock database layer
 const mockExecute = mock(() => Promise.resolve());
 
-mock.module('../src/db/index', () => ({
+mock.module('../src/infrastructure/persistence/drizzle/index', () => ({
   db: {
     execute: mockExecute,
   },
 }));
 
 describe('Health Route Handler', () => {
-  let handleHealth: typeof import('../src/routes/health').handleHealth;
+  let handleHealth: typeof import('../src/interfaces/http/controllers/health-controller').handleHealth;
 
   beforeEach(async () => {
     mockExecute.mockClear();
-    const healthRoute = await import('../src/routes/health');
+    const healthRoute = await import('../src/interfaces/http/controllers/health-controller');
     handleHealth = healthRoute.handleHealth;
   });
 

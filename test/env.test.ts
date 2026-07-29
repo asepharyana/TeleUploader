@@ -51,4 +51,18 @@ describe('Environment Variables Validation', () => {
     expect(config.sessionCookieName).toBe(process.env.SESSION_COOKIE_NAME || 'tu_session');
     expect(config.sessionMaxAgeMs).toBe(86400 * 1000);
   });
+
+  it('additionalBotTokens should be populated in test environment', () => {
+    expect(Array.isArray(config.additionalBotTokens)).toBe(true);
+    // With mock tokens from setup-env.ts there should be 2 additional tokens
+    expect(config.additionalBotTokens.length).toBeGreaterThanOrEqual(2);
+  });
+
+  it('S3 validation should not throw — env already loaded without error at import time', () => {
+    // config was imported at the top of this file; if S3 validation had failed,
+    // this test file would never have loaded. The fact that we're here means
+    // validation passed.
+    expect(config.s3AccessKey).toBeDefined();
+    expect(config.s3SecretKey).toBeDefined();
+  });
 });

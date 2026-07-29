@@ -4,7 +4,7 @@ import { db, files as fileSchema } from '../db';
 import type { NewFile } from '../db/schema';
 import { config } from '../env';
 import { cleanupTempFile } from './file';
-import { forwardToStorage } from './telegram';
+import { botPool } from '../infrastructure/telegram/bot-pool';
 import { createZip, type ZipEntry } from './zip';
 
 export type PreparedUpload = {
@@ -86,7 +86,7 @@ const flushUploads = async (): Promise<void> => {
     );
     zipTempPath = zip.tempPath;
     const archiveFileName = `filedrop-${nanoid()}.zip`;
-    const archiveResult = await forwardToStorage(
+    const archiveResult = await botPool.forwardToStorage(
       createReadStream(zip.tempPath),
       archiveFileName,
       'document',

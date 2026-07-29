@@ -4,7 +4,8 @@ import { fileInfoCache } from '../../../infrastructure/cache/index';
 import logger from '../../../shared/logger/index';
 import { cleanupTempFile, formatCreatedAt, getErrorMessage } from '../../../shared/utils/file';
 import { createChunkedObjectResponse } from '../../../utils/chunked-storage';
-import { getFileInfo, type TelegramFileInfo } from '../../../utils/telegram';
+import { botPool } from '../../../infrastructure/telegram/bot-pool';
+import type { TelegramFileInfo } from '../../../domain/ports/telegram-service';
 import { locateZipEntry } from '../../../utils/zip';
 
 /**
@@ -46,7 +47,7 @@ const getTelegramFileInfo = async (
     return cached;
   }
 
-  const fileInfo = await getFileInfo(telegramFileId);
+  const fileInfo = await botPool.getFileInfo(telegramFileId);
   fileInfoCache.set(cacheKey, fileInfo);
   logger.debug('File info cached', { publicId, cacheKey });
 

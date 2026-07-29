@@ -14,7 +14,7 @@ import {
   createChunkedObjectResponse,
   storeFileInTelegramChunks,
 } from '../../../utils/chunked-storage';
-import { forwardToStorage, getFileInfo } from '../../../utils/telegram';
+import { botPool } from '../../../infrastructure/telegram/bot-pool';
 
 /**
  * Route parameters extracted from the URL path.
@@ -239,7 +239,7 @@ export const handleUploadObjectV1 = async (
     );
   }
 
-  const forwardResult = await forwardToStorage(
+  const forwardResult = await botPool.forwardToStorage(
     createReadStream(tempPath),
     partFileNamePrefix,
     'document',
@@ -318,7 +318,7 @@ export const handleDownloadObjectV1 = async (
     return createChunkedObjectResponse({ file, range, reqId: '' });
   }
 
-  const fileInfo = await getFileInfo(file.telegramFileId);
+  const fileInfo = await botPool.getFileInfo(file.telegramFileId);
   const redirectUrl = `https://api.telegram.org/file/bot${fileInfo.bot_token}/${fileInfo.file_path}`;
 
   return new Response(null, { status: 302, headers: { Location: redirectUrl } });

@@ -9,7 +9,7 @@ import { config } from '../env';
 import { computeHash } from './file';
 import { createGetObjectResponse, type ObjectPartSource } from './s3/object-stream';
 import type { RangeParseResult } from './s3/range';
-import { forwardToStorage, getFileInfo } from './telegram';
+import { botPool } from '../infrastructure/telegram/bot-pool';
 
 export type ChunkCompressionAlgorithm = 'gzip' | null;
 
@@ -94,7 +94,7 @@ export const uploadFileInTelegramChunks = async (input: {
       input.compress,
       input.compressionMinSizeBytes,
     );
-    const forwardResult = await forwardToStorage(
+    const forwardResult = await botPool.forwardToStorage(
       bytes,
       `${input.partFileNamePrefix}.part-${partNumber}`,
       'document',
@@ -189,7 +189,7 @@ export const buildChunkedObjectSources = async (file: File): Promise<ObjectPartS
   const sources: ObjectPartSource[] = [];
 
   for (const part of parts) {
-    const fileInfo = await getFileInfo(part.telegramFileId);
+    const fileInfo = await botPool.getFileInfo(part.telegramFileId);
     sources.push({
       telegramFileId: part.telegramFileId,
       telegramUrl: `https://api.telegram.org/file/bot${fileInfo.bot_token}/${fileInfo.file_path}`,

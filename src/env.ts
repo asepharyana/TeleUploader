@@ -46,6 +46,25 @@ if (missing.length > 0) {
   throw new Error(`Missing environment variables: ${missing.join(', ')}`);
 }
 
+// Validate S3 credentials: if S3_ACCESS_KEY is explicitly set (env var present,
+// not relying on default), S3_SECRET_KEY must also be set. An empty secret key
+// would cause HMAC-SHA256 to "succeed" silently — a security hole.
+const s3AccessKeyExplicit = 'S3_ACCESS_KEY' in process.env;
+const s3SecretKeyExplicit = 'S3_SECRET_KEY' in process.env;
+if (s3AccessKeyExplicit || s3SecretKeyExplicit) {
+  const s3Key = (process.env.S3_ACCESS_KEY || '').trim();
+  const s3Secret = (process.env.S3_SECRET_KEY || '').trim();
+  if (s3Key && !s3Secret) {
+    logger.error('S3_ACCESS_KEY is set but S3_SECRET_KEY is empty — this is a security risk');
+    throw new Error(
+      'S3_ACCESS_KEY requires S3_SECRET_KEY to be set. Set S3_SECRET_KEY or unset S3_ACCESS_KEY.',
+    );
+  }
+  if (s3Secret && !s3Key) {
+    logger.warn('S3_SECRET_KEY is set but S3_ACCESS_KEY is not — S3 auth will use the default key');
+  }
+}
+
 const parseNumber = (value: string | undefined, fallback: number): number => {
   const parsed = Number.parseInt(value || '', 10);
   return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
@@ -76,8 +95,7 @@ const maskDatabaseUrl = (value: string): string =>
 
 export const config: AppConfig = {
   botToken: process.env.BOT_TOKEN!,
-  additionalBotTokens:
-    process.env.NODE_ENV === 'test' ? [] : parseTokens(process.env.ADDITIONAL_BOT_TOKENS),
+  additionalBotTokens: parseTokens(process.env.ADDITIONAL_BOT_TOKENS),
   storageChatId: parseInt(process.env.STORAGE_CHANNEL_ID!, 10),
   baseUrl: process.env.BASE_URL!,
   databaseUrl: process.env.DATABASE_URL!,
