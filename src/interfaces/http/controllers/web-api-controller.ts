@@ -1,21 +1,11 @@
 import { createReadStream } from 'node:fs';
 import { nanoid } from 'nanoid';
 import { config } from '../../../config/index';
-import { createBucket, deleteBucket, findBucketByName, listBuckets } from '../../../db/buckets';
-import {
-  countBucketObjects,
-  findFileByBucketAndKey,
-  listObjectsByPrefix,
-  softDeleteFile,
-} from '../../../db/files-ext';
-import { db, files as fileSchema } from '../../../db/index';
+import { bucketRepository, chunkedStorage, fileRepository } from '../../../infrastructure/di';
+import { db, files as fileSchema } from '../../../infrastructure/persistence/drizzle/index';
 import { botPool } from '../../../infrastructure/telegram/bot-pool';
 import logger from '../../../shared/logger/index';
 import { cleanupTempFile, ensureExtension, getErrorMessage } from '../../../shared/utils/file';
-import {
-  createChunkedObjectResponse,
-  storeFileInTelegramChunks,
-} from '../../../utils/chunked-storage';
 
 /**
  * Route parameters extracted from the URL path.
@@ -48,13 +38,13 @@ const jsonError = (error: string, status: number): Response => Response.json({ e
  * @returns A JSON response with the bucket list.
  */
 export const handleListBucketsV1 = async (): Promise<Response> => {
-  const buckets = await listBuckets();
+  const buckets = await bucketRepository.list();
   const result = await Promise.all(
     buckets.map(async (b) => ({
       id: b.id,
       name: b.name,
       createdAt: b.createdAt.toISOString(),
-      objectCount: await countBucketObjects(b.id),
+      objectCount: await fileRepository.countByBucket(b.id),
     })),
   );
   return json({ buckets: result });
@@ -73,9 +63,9 @@ export const handleCreateBucketV1 = async (req: Request): Promise<Response> => {
   if (!body.name || !/^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$/.test(body.name)) {
     return jsonError('Invalid bucket name. Use lowercase, 3-63 chars, no underscore', 400);
   }
-  const existing = await findBucketByName(body.name);
+  const existing = await bucketRepository.findByName(body.name);
   if (existing) return jsonError('Bucket already exists', 409);
-  const bucket = await createBucket(body.name);
+  const bucket = await bucketRepository.create(body.name);
   return json({ id: bucket.id, name: bucket.name }, 201);
 };
 
@@ -92,11 +82,11 @@ export const handleDeleteBucketV1 = async (
   _req: Request,
   params: RouteParams,
 ): Promise<Response> => {
-  const bucket = await findBucketByName(params.bucket!);
+  const bucket = await bucketRepository.findByName(params.bucket!);
   if (!bucket) return jsonError('Bucket not found', 404);
-  const count = await countBucketObjects(bucket.id);
+  const count = await fileRepository.countByBucket(bucket.id);
   if (count > 0) return jsonError('Bucket is not empty', 409);
-  await deleteBucket(params.bucket!);
+  await bucketRepository.delete(params.bucket!);
   return json({ success: true });
 };
 
@@ -110,7 +100,7 @@ export const handleDeleteBucketV1 = async (
  * @returns A JSON response with the object list.
  */
 export const handleListObjectsV1 = async (req: Request, params: RouteParams): Promise<Response> => {
-  const bucket = await findBucketByName(params.bucket!);
+  const bucket = await bucketRepository.findByName(params.bucket!);
   if (!bucket) return jsonError('Bucket not found', 404);
 
   const url = new URL(req.url);
@@ -119,7 +109,7 @@ export const handleListObjectsV1 = async (req: Request, params: RouteParams): Pr
   const maxKeys = Number.parseInt(url.searchParams.get('max-keys') || '1000', 10);
   const continuationToken = url.searchParams.get('continuation-token') || null;
 
-  const { objects, prefixes } = await listObjectsByPrefix(
+  const { objects, prefixes } = await fileRepository.listByPrefix(
     bucket.id,
     prefix,
     delimiter,
@@ -162,7 +152,7 @@ export const handleUploadObjectV1 = async (
   req: Request,
   params: RouteParams,
 ): Promise<Response> => {
-  const bucket = await findBucketByName(params.bucket!);
+  const bucket = await bucketRepository.findByName(params.bucket!);
   if (!bucket) return jsonError('Bucket not found', 404);
 
   const formData = await req.formData();
@@ -217,7 +207,7 @@ export const handleUploadObjectV1 = async (
   const partFileNamePrefix = `s3-${bucket.name}-${key.replace(/\//g, '_')}`;
 
   if (sizeBytes > config.telegramChunkSizeBytes) {
-    const uploadedFile = await storeFileInTelegramChunks({
+    const uploadedFile = await chunkedStorage.storeFileInTelegramChunks({
       tempPath,
       partFileNamePrefix,
       fileName: finalFileName,
@@ -287,9 +277,9 @@ export const handleDeleteObjectV1 = async (
   _req: Request,
   params: RouteParams,
 ): Promise<Response> => {
-  const bucket = await findBucketByName(params.bucket!);
+  const bucket = await bucketRepository.findByName(params.bucket!);
   if (!bucket) return jsonError('Bucket not found', 404);
-  await softDeleteFile(bucket.id, params.key!);
+  await fileRepository.softDelete(bucket.id, params.key!);
   return json({ success: true });
 };
 
@@ -307,15 +297,15 @@ export const handleDownloadObjectV1 = async (
   _req: Request,
   params: RouteParams,
 ): Promise<Response> => {
-  const bucket = await findBucketByName(params.bucket!);
+  const bucket = await bucketRepository.findByName(params.bucket!);
   if (!bucket) return jsonError('Bucket not found', 404);
 
-  const file = await findFileByBucketAndKey(bucket.id, params.key!);
+  const file = await fileRepository.findByBucketAndKey(bucket.id, params.key!);
   if (!file) return jsonError('Object not found', 404);
 
   if (file.storageBackend === 'chunked') {
     const range = { type: 'none' as const };
-    return createChunkedObjectResponse({ file, range, reqId: '' });
+    return chunkedStorage.createChunkedObjectResponse({ file, range, reqId: '' });
   }
 
   const fileInfo = await botPool.getFileInfo(file.telegramFileId);
@@ -348,12 +338,12 @@ export const handleCopyObjectV1 = async (req: Request, params: RouteParams): Pro
   }
 
   const destBucketName = body.destBucket || params.bucket!;
-  const sourceBucket = await findBucketByName(params.bucket!);
-  const destBucket = await findBucketByName(destBucketName);
+  const sourceBucket = await bucketRepository.findByName(params.bucket!);
+  const destBucket = await bucketRepository.findByName(destBucketName);
 
   if (!sourceBucket || !destBucket) return jsonError('Bucket not found', 404);
 
-  const sourceFile = await findFileByBucketAndKey(sourceBucket.id, body.sourceKey);
+  const sourceFile = await fileRepository.findByBucketAndKey(sourceBucket.id, body.sourceKey);
   if (!sourceFile) return jsonError('Source object not found', 404);
 
   if (sourceFile.storageBackend === 'chunked') {

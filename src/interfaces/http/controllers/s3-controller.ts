@@ -1,36 +1,22 @@
 import { createReadStream } from 'node:fs';
 import { nanoid } from 'nanoid';
 import { config } from '../../../config/index';
-import { createBucket, deleteBucket, findBucketByName, listBuckets } from '../../../db/buckets';
-import {
-  countBucketObjects,
-  findFileByBucketAndKey,
-  listObjectsByPrefix,
-  softDeleteFile,
-} from '../../../db/files-ext';
-import { db, files as fileSchema } from '../../../db/index';
-import {
-  abortMultipartUpload,
-  completeMultipartUpload,
-  createMultipartUpload,
-  findMultipartUpload,
-  insertMultipartPart,
-  listMultipartParts,
-  listMultipartUploadsByBucket,
-} from '../../../db/multipart';
-import type { File } from '../../../db/schema';
+import type { File as FileEntity } from '../../../domain/entities/file';
 import type { ForwardResult } from '../../../domain/ports/telegram-service';
+import {
+  bucketRepository,
+  chunkedStorage,
+  fileRepository,
+  multipartRepository,
+} from '../../../infrastructure/di';
+import { db, files as fileSchema } from '../../../infrastructure/persistence/drizzle/index';
 import { botPool } from '../../../infrastructure/telegram/bot-pool';
 import logger from '../../../shared/logger/index';
 import { cleanupTempFile, ensureExtension, getErrorMessage } from '../../../shared/utils/file';
-import {
-  createChunkedObjectResponse,
-  storeFileInTelegramChunks,
-} from '../../../utils/chunked-storage';
-import { verifyBodyHash, verifyPresignedUrl, verifySignature } from '../../../utils/s3/auth';
-import { S3_CORS_HEADERS, s3Headers } from '../../../utils/s3/headers';
-import { createGetObjectResponse, type ObjectPartSource } from '../../../utils/s3/object-stream';
-import { parseRangeHeader, unsatisfiedContentRange } from '../../../utils/s3/range';
+import { verifyBodyHash, verifyPresignedUrl, verifySignature } from '../../s3/auth';
+import { S3_CORS_HEADERS, s3Headers } from '../../s3/headers';
+import { createGetObjectResponse, type ObjectPartSource } from '../../s3/object-stream';
+import { parseRangeHeader, unsatisfiedContentRange } from '../../s3/range';
 import {
   bucketVersioningConfigurationXml,
   completeMultipartUploadXml,
@@ -45,7 +31,7 @@ import {
   parseCompleteMultipartBody,
   parseDeleteObjectsBody,
   s3ErrorResponse,
-} from '../../../utils/s3/xml';
+} from '../../s3/xml';
 
 /**
  * The default S3 region returned when no region is explicitly configured.
@@ -309,7 +295,7 @@ export const handleS3Request = async (
  * @returns An S3 XML response with the bucket list.
  */
 const handleListBuckets = async (reqId: string): Promise<Response> => {
-  const buckets = await listBuckets();
+  const buckets = await bucketRepository.list();
   const xml = listBucketsXml(buckets, reqId);
   return s3Response(xml, 200, reqId, { 'content-type': 'application/xml' });
 };
@@ -339,7 +325,7 @@ const handleCreateBucket = async (bucketName: string, reqId: string): Promise<Re
       reqId,
     );
   }
-  const existing = await findBucketByName(bucketName);
+  const existing = await bucketRepository.findByName(bucketName);
   if (existing) {
     return s3ErrorResponse(
       'BucketAlreadyExists',
@@ -349,7 +335,7 @@ const handleCreateBucket = async (bucketName: string, reqId: string): Promise<Re
       reqId,
     );
   }
-  await createBucket(bucketName);
+  await bucketRepository.create(bucketName);
   return s3Response(null, 200, reqId);
 };
 
@@ -361,7 +347,7 @@ const handleCreateBucket = async (bucketName: string, reqId: string): Promise<Re
  * @returns A 200 response when the bucket exists, or an S3 XML error.
  */
 const handleHeadBucket = async (bucketName: string, reqId: string): Promise<Response> => {
-  const bucket = await findBucketByName(bucketName);
+  const bucket = await bucketRepository.findByName(bucketName);
   if (!bucket) {
     return s3ErrorResponse(
       'NoSuchBucket',
@@ -384,7 +370,7 @@ const handleHeadBucket = async (bucketName: string, reqId: string): Promise<Resp
  * @returns A 204 response on success, or an S3 XML error.
  */
 const handleDeleteBucket = async (bucketName: string, reqId: string): Promise<Response> => {
-  const bucket = await findBucketByName(bucketName);
+  const bucket = await bucketRepository.findByName(bucketName);
   if (!bucket) {
     return s3ErrorResponse(
       'NoSuchBucket',
@@ -394,7 +380,7 @@ const handleDeleteBucket = async (bucketName: string, reqId: string): Promise<Re
       reqId,
     );
   }
-  const objCount = await countBucketObjects(bucket.id);
+  const objCount = await fileRepository.countByBucket(bucket.id);
   if (objCount > 0) {
     return s3ErrorResponse(
       'BucketNotEmpty',
@@ -404,7 +390,7 @@ const handleDeleteBucket = async (bucketName: string, reqId: string): Promise<Re
       reqId,
     );
   }
-  await deleteBucket(bucketName);
+  await bucketRepository.delete(bucketName);
   return s3Response(null, 204, reqId);
 };
 
@@ -417,7 +403,7 @@ const handleDeleteBucket = async (bucketName: string, reqId: string): Promise<Re
  * @returns An S3 XML response with the versioning configuration.
  */
 const handleGetBucketVersioning = async (bucketName: string, reqId: string): Promise<Response> => {
-  const bucket = await findBucketByName(bucketName);
+  const bucket = await bucketRepository.findByName(bucketName);
   if (!bucket) {
     return s3ErrorResponse(
       'NoSuchBucket',
@@ -456,7 +442,7 @@ const handleGetObject = async (
   headers: Record<string, string>,
   reqId: string,
 ): Promise<Response> => {
-  const bucketRecord = await findBucketByName(bucket);
+  const bucketRecord = await bucketRepository.findByName(bucket);
   if (!bucketRecord)
     return s3ErrorResponse(
       'NoSuchBucket',
@@ -466,7 +452,7 @@ const handleGetObject = async (
       reqId,
     );
 
-  const file = await findFileByBucketAndKey(bucketRecord.id, key);
+  const file = await fileRepository.findByBucketAndKey(bucketRecord.id, key);
   if (!file)
     return s3ErrorResponse(
       'NoSuchKey',
@@ -551,7 +537,7 @@ const handleGetObject = async (
       );
     }
     try {
-      return await createChunkedObjectResponse({ file, range, reqId });
+      return await chunkedStorage.createChunkedObjectResponse({ file, range, reqId });
     } catch (error) {
       logger.warn('Chunked object content fetch failed', { key, error: getErrorMessage(error) });
       return s3ErrorResponse(
@@ -638,14 +624,14 @@ const handleGetObject = async (
  * @returns An S3 response streaming the assembled object content.
  */
 const handleGetMultipartObject = async (
-  file: File,
+  file: FileEntity,
   bucket: string,
   key: string,
   headers: Record<string, string>,
   reqId: string,
 ): Promise<Response> => {
   const uploadId = file.multipartUploadId!;
-  const parts = await listMultipartParts(uploadId);
+  const parts = await multipartRepository.listParts(uploadId);
 
   if (parts.length === 0) {
     return s3ErrorResponse(
@@ -724,7 +710,7 @@ const handleHeadObject = async (
   headers: Record<string, string>,
   reqId: string,
 ): Promise<Response> => {
-  const bucketRecord = await findBucketByName(bucket);
+  const bucketRecord = await bucketRepository.findByName(bucket);
   if (!bucketRecord)
     return s3ErrorResponse(
       'NoSuchBucket',
@@ -734,7 +720,7 @@ const handleHeadObject = async (
       reqId,
     );
 
-  const file = await findFileByBucketAndKey(bucketRecord.id, key);
+  const file = await fileRepository.findByBucketAndKey(bucketRecord.id, key);
   if (!file)
     return s3ErrorResponse(
       'NoSuchKey',
@@ -930,7 +916,7 @@ const handlePutObject = async (
   req: Request,
   reqId: string,
 ): Promise<Response> => {
-  const bucketRecord = await findBucketByName(bucket);
+  const bucketRecord = await bucketRepository.findByName(bucket);
   if (!bucketRecord)
     return s3ErrorResponse(
       'NoSuchBucket',
@@ -1011,7 +997,7 @@ const handlePutObject = async (
 
   // Idempotent PUT: if the object already exists, skip upload
   try {
-    const existing = await findFileByBucketAndKey(bucketRecord.id, key);
+    const existing = await fileRepository.findByBucketAndKey(bucketRecord.id, key);
     if (existing) {
       await cleanupTempFile(streamed.tempPath);
       return s3Response(null, 200, reqId, { etag: `"${streamed.fileHash}"` });
@@ -1057,7 +1043,7 @@ const storeFileFromTemp = async (
   const partFileNamePrefix = `s3-${bucketRecord.name}-${key.replace(/\//g, '_')}`;
 
   if (streamed.sizeBytes > config.telegramChunkSizeBytes) {
-    const file = await storeFileInTelegramChunks({
+    const file = await chunkedStorage.storeFileInTelegramChunks({
       tempPath: streamed.tempPath,
       partFileNamePrefix,
       fileName: finalFileName,
@@ -1138,7 +1124,7 @@ const handleCopyObject = async (
   const sourceBucket = parts[0];
   const sourceKey = parts.slice(1).join('/');
 
-  const sourceBucketRecord = await findBucketByName(sourceBucket);
+  const sourceBucketRecord = await bucketRepository.findByName(sourceBucket);
   if (!sourceBucketRecord)
     return s3ErrorResponse(
       'NoSuchBucket',
@@ -1148,7 +1134,7 @@ const handleCopyObject = async (
       reqId,
     );
 
-  const sourceFile = await findFileByBucketAndKey(sourceBucketRecord.id, sourceKey);
+  const sourceFile = await fileRepository.findByBucketAndKey(sourceBucketRecord.id, sourceKey);
   if (!sourceFile)
     return s3ErrorResponse(
       'NoSuchKey',
@@ -1232,7 +1218,7 @@ const handleDeleteObject = async (
   key: string,
   reqId: string,
 ): Promise<Response> => {
-  const bucketRecord = await findBucketByName(bucket);
+  const bucketRecord = await bucketRepository.findByName(bucket);
   if (!bucketRecord)
     return s3ErrorResponse(
       'NoSuchBucket',
@@ -1242,7 +1228,7 @@ const handleDeleteObject = async (
       reqId,
     );
 
-  await softDeleteFile(bucketRecord.id, key);
+  await fileRepository.softDelete(bucketRecord.id, key);
   return s3Response(null, 204, reqId);
 };
 
@@ -1262,7 +1248,7 @@ const handleDeleteObjects = async (
   body: string,
   reqId: string,
 ): Promise<Response> => {
-  const bucketRecord = await findBucketByName(bucket);
+  const bucketRecord = await bucketRepository.findByName(bucket);
   if (!bucketRecord)
     return s3ErrorResponse(
       'NoSuchBucket',
@@ -1288,7 +1274,7 @@ const handleDeleteObjects = async (
   const deletedKeys: string[] = [];
   const errors: Array<{ key: string; code: string; message: string }> = [];
   for (const key of keys) {
-    const ok = await softDeleteFile(bucketRecord.id, key);
+    const ok = await fileRepository.softDelete(bucketRecord.id, key);
     if (ok) {
       deletedKeys.push(key);
     } else {
@@ -1316,7 +1302,7 @@ const handleListObjectsV1 = async (
   searchParams: URLSearchParams,
   reqId: string,
 ): Promise<Response> => {
-  const bucketRecord = await findBucketByName(bucket);
+  const bucketRecord = await bucketRepository.findByName(bucket);
   if (!bucketRecord)
     return s3ErrorResponse(
       'NoSuchBucket',
@@ -1335,7 +1321,7 @@ const handleListObjectsV1 = async (
   const marker = searchParams.get('marker') || null;
   const encodingType = searchParams.get('encoding-type') || null;
 
-  const { objects, prefixes: commonPrefixes } = await listObjectsByPrefix(
+  const { objects, prefixes: commonPrefixes } = await fileRepository.listByPrefix(
     bucketRecord.id,
     prefix,
     delimiter,
@@ -1386,7 +1372,7 @@ const handleListObjectsV2 = async (
   searchParams: URLSearchParams,
   reqId: string,
 ): Promise<Response> => {
-  const bucketRecord = await findBucketByName(bucket);
+  const bucketRecord = await bucketRepository.findByName(bucket);
   if (!bucketRecord)
     return s3ErrorResponse(
       'NoSuchBucket',
@@ -1403,7 +1389,7 @@ const handleListObjectsV2 = async (
   const startAfter = searchParams.get('start-after') || null;
   const encodingType = searchParams.get('encoding-type') || null;
 
-  const { objects, prefixes: commonPrefixes } = await listObjectsByPrefix(
+  const { objects, prefixes: commonPrefixes } = await fileRepository.listByPrefix(
     bucketRecord.id,
     prefix,
     delimiter,
@@ -1459,7 +1445,7 @@ const handleCreateMultipartUpload = async (
   headers: Record<string, string>,
   reqId: string,
 ): Promise<Response> => {
-  const bucketRecord = await findBucketByName(bucket);
+  const bucketRecord = await bucketRepository.findByName(bucket);
   if (!bucketRecord)
     return s3ErrorResponse(
       'NoSuchBucket',
@@ -1470,7 +1456,7 @@ const handleCreateMultipartUpload = async (
     );
 
   const contentType = headers['content-type'] || null;
-  const uploadId = await createMultipartUpload(bucketRecord.id, key, 's3', contentType);
+  const uploadId = await multipartRepository.create(bucketRecord.id, key, 's3', contentType);
 
   const xml = initiateMultipartUploadXml(bucket, key, uploadId);
   return s3Response(xml, 200, reqId, { 'content-type': 'application/xml' });
@@ -1514,7 +1500,7 @@ const handleUploadPart = async (
     );
   }
 
-  const multipart = await findMultipartUpload(uploadId);
+  const multipart = await multipartRepository.findById(uploadId);
   if (!multipart || multipart.s3Key !== key) {
     return s3ErrorResponse(
       'NoSuchUpload',
@@ -1583,7 +1569,7 @@ const handleUploadPart = async (
   await cleanupTempFile(tempPath);
 
   const etag = hasher.digest('hex');
-  await insertMultipartPart({
+  await multipartRepository.insertPart({
     uploadId,
     partNumber,
     telegramFileId: forwardResult.telegramFileId,
@@ -1617,7 +1603,7 @@ const handleCompleteMultipartUpload = async (
   reqId: string,
 ): Promise<Response> => {
   const uploadId = searchParams.get('uploadId')!;
-  const multipart = await findMultipartUpload(uploadId);
+  const multipart = await multipartRepository.findById(uploadId);
   // H5: Verify both upload exists AND key matches (consistent with handleUploadPart)
   if (!multipart || multipart.s3Key !== key) {
     return s3ErrorResponse(
@@ -1630,7 +1616,7 @@ const handleCompleteMultipartUpload = async (
   }
 
   const parts = parseCompleteMultipartBody(body);
-  const storedParts = await listMultipartParts(uploadId);
+  const storedParts = await multipartRepository.listParts(uploadId);
 
   // Validate ascending part order
   const partNumbers = parts.map((p) => p.partNumber);
@@ -1702,7 +1688,7 @@ const handleCompleteMultipartUpload = async (
     updatedAt: new Date(),
   });
 
-  await completeMultipartUpload(uploadId);
+  await multipartRepository.complete(uploadId);
 
   const location = `${config.baseUrl}/${bucket}/${key}`;
   const xml = completeMultipartUploadXml(bucket, key, combinedEtag, location);
@@ -1723,7 +1709,7 @@ const handleListMultipartUploads = async (
   searchParams: URLSearchParams,
   reqId: string,
 ): Promise<Response> => {
-  const bucketRecord = await findBucketByName(bucket);
+  const bucketRecord = await bucketRepository.findByName(bucket);
   if (!bucketRecord)
     return s3ErrorResponse(
       'NoSuchBucket',
@@ -1735,7 +1721,7 @@ const handleListMultipartUploads = async (
 
   const maxUploads = Math.min(Number.parseInt(searchParams.get('max-uploads') || '1000', 10), 1000);
   const keyMarker = searchParams.get('key-marker') || null;
-  const { uploads, isTruncated, nextKeyMarker } = await listMultipartUploadsByBucket(
+  const { uploads, isTruncated, nextKeyMarker } = await multipartRepository.listByBucket(
     bucketRecord.id,
     maxUploads,
     keyMarker,
@@ -1774,7 +1760,7 @@ const handleAbortMultipartUpload = async (
   reqId: string,
 ): Promise<Response> => {
   const uploadId = searchParams.get('uploadId')!;
-  const multipart = await findMultipartUpload(uploadId);
+  const multipart = await multipartRepository.findById(uploadId);
   if (!multipart) {
     return s3ErrorResponse(
       'NoSuchUpload',
@@ -1785,7 +1771,7 @@ const handleAbortMultipartUpload = async (
     );
   }
 
-  await abortMultipartUpload(uploadId);
+  await multipartRepository.abort(uploadId);
   return s3Response(null, 204, reqId);
 };
 
@@ -1807,7 +1793,7 @@ const handleListParts = async (
   reqId: string,
 ): Promise<Response> => {
   const uploadId = searchParams.get('uploadId')!;
-  const multipart = await findMultipartUpload(uploadId);
+  const multipart = await multipartRepository.findById(uploadId);
   if (!multipart) {
     return s3ErrorResponse(
       'NoSuchUpload',
@@ -1818,7 +1804,7 @@ const handleListParts = async (
     );
   }
 
-  const parts = await listMultipartParts(uploadId);
+  const parts = await multipartRepository.listParts(uploadId);
   const maxParts = Math.min(Number.parseInt(searchParams.get('max-parts') || '1000', 10), 1000);
 
   const xml = listPartsXml(

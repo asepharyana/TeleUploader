@@ -1,4 +1,4 @@
-import logger from './utils/logger';
+import logger from './shared/logger/index';
 
 interface AppConfig {
   /** All bot tokens merged from BOT_TOKENS (or BOT_TOKEN + ADDITIONAL_BOT_TOKENS fallback) */

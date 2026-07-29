@@ -1,5 +1,5 @@
 import { unlink } from 'node:fs/promises';
-import logger from '../../utils/logger';
+import logger from '../logger/index';
 
 /**
  * Safely extracts an error message from an unknown value.

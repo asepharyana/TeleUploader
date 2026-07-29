@@ -2,11 +2,11 @@ import { createReadStream } from 'node:fs';
 import { nanoid } from 'nanoid';
 import type { TelegramFileInfo } from '../../../domain/ports/telegram-service';
 import { fileInfoCache } from '../../../infrastructure/cache/index';
+import { chunkedStorage } from '../../../infrastructure/di';
 import { botPool } from '../../../infrastructure/telegram/bot-pool';
 import logger from '../../../shared/logger/index';
 import { cleanupTempFile, formatCreatedAt, getErrorMessage } from '../../../shared/utils/file';
-import { createChunkedObjectResponse } from '../../../utils/chunked-storage';
-import { locateZipEntry } from '../../../utils/zip';
+import { locateZipEntry } from '../../../shared/utils/zip';
 
 /**
  * Extended Request type that includes route parameter access.
@@ -115,7 +115,7 @@ export const handleFileRedirect = async (req: RequestWithParams): Promise<Respon
         return fail(501, 'Archive entry extraction is not supported for chunked files');
       }
       const range = { type: 'none' as const };
-      return createChunkedObjectResponse({ file, range, reqId: '' });
+      return chunkedStorage.createChunkedObjectResponse({ file, range, reqId: '' });
     }
 
     const archiveEntryName = file.archiveEntryName;

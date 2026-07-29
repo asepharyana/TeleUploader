@@ -12,7 +12,7 @@ import { metricsCollector } from './shared/metrics/index';
 
 // ─── Auto-run migration at startup ──────────────────────────────────────────
 try {
-  const { runMigration } = await import('./db/migrate');
+  const { runMigration } = await import('./infrastructure/persistence/drizzle/migrate');
   await runMigration();
 } catch {
   logger.warn('Auto-migration skipped (non-fatal)');

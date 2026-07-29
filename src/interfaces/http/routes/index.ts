@@ -1,7 +1,7 @@
 import { config } from '../../../config/index';
 import { handleSwaggerHtml, handleSwaggerJson } from '../../../routes/swagger';
-import { extractS3BucketFromHost } from '../../../utils/s3/virtual-host';
 import { isS3Request } from '../../s3/auth';
+import { extractS3BucketFromHost } from '../../s3/virtual-host';
 import { handleLogin, handleLogout, handleMe } from '../controllers/auth-controller';
 import { handleFileInfo, handleFileRedirect } from '../controllers/file-controller';
 import { handleHealth } from '../controllers/health-controller';

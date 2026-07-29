@@ -1,4 +1,4 @@
-import logger from '../../utils/logger';
+import logger from '../logger/index';
 
 /** Configuration options for retry behaviour. */
 interface RetryOptions {

@@ -11,7 +11,7 @@ import {
   createSessionCookie,
   getAuthSession,
   isAuthEnabled,
-} from '../../../utils/auth';
+} from '../middleware/auth';
 
 /**
  * Helper that builds a JSON Response with optional extra headers.
