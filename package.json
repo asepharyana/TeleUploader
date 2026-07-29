@@ -14,7 +14,8 @@
     "test:web-api": "bun test --preload ./test/helpers/setup-env.ts test/web-api.test.ts",
     "test:s3": "bun test --preload ./test/helpers/setup-env.ts test/s3-auth.test.ts && bun test --preload ./test/helpers/setup-env.ts test/s3-operations.test.ts && bun test --preload ./test/helpers/setup-env.ts test/web-api.test.ts",
     "lint": "bunx biome check src test",
-    "format": "bunx biome format --write src test"
+    "format": "bunx biome format --write src test",
+    "prepare": "husky"
   },
   "dependencies": {
     "@prisma/engines": "^7.8.0",
@@ -31,6 +32,7 @@
     "@biomejs/biome": "^2.4.15",
     "@types/node": "^25.8.0",
     "drizzle-kit": "^0.31.10",
+    "husky": "^9.1.7",
     "typescript": "^6.0.3"
   }
 }
