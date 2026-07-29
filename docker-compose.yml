@@ -5,6 +5,8 @@ services:
     restart: always
     environment:
       - BOT_TOKENS=${BOT_TOKENS}
+      - BOT_TOKEN=${BOT_TOKEN}
+      - ADDITIONAL_BOT_TOKENS=${ADDITIONAL_BOT_TOKENS:-}
       - STORAGE_CHANNEL_ID=${STORAGE_CHANNEL_ID}
       - BASE_URL=${BASE_URL}
       - DATABASE_URL=${DATABASE_URL}
