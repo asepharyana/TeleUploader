@@ -152,6 +152,7 @@ export const handleS3Request = async (
   const method = req.method;
   const url = new URL(req.url);
   const pathname = url.pathname;
+  if (pathname !== '/') console.error('S3_REQ:' + method + ' ' + pathname);
   const { bucket, key } = virtualHostBucket
     ? {
         bucket: virtualHostBucket,

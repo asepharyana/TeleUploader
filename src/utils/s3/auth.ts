@@ -147,28 +147,25 @@ const buildCanonicalRequest = (
 const normalizeUri = (uri: string): string => {
   if (!uri || uri === '') return '/';
 
-  // Step 1: Decode (SigV4 requirement)
+  // AWS SigV4 requires URI-decoded paths in the canonical request
+  // Only `.` and `..` segments are removed per RFC 3986 section 5.2.4
+  // Empty segments (from `//` or trailing `/`) are preserved — they are
+  // part of the URI and the SDK signs them.
   const decoded = decodeURIComponent(uri);
-
-  // Step 2: Remove dot-segments per RFC 3986 section 5.2.4
   const segments = decoded.split('/');
   const result: string[] = [];
 
   for (const segment of segments) {
-    if (segment === '.' || segment === '') {
-      // Skip `.` and empty segments (from double slashes)
-      continue;
-    }
+    if (segment === '.') continue;
     if (segment === '..') {
-      result.pop(); // Go up one level
+      result.pop();
       continue;
     }
     result.push(segment);
   }
 
-  // Reconstruct path — preserved as-is (SigV4 includes trailing slashes)
-  const normalized = result.length > 0 ? `/${result.join('/')}` : '/';
-  return normalized;
+  // Join preserves empty first segment (from leading /) automatically
+  return result.join('/') || '/';
 };
 
 const awsEncode = (value: string): string =>
@@ -332,6 +329,7 @@ export const verifySignature = async (
   const expectedSignature = await hmacHex(signingKey, stringToSign);
 
   if (!timingSafeCompare(expectedSignature, parsed.signature)) {
+    console.error(`SIG: uri=${canonicalUri} signed=${parsed.signedHeaders}`);
     return { isValid: false, credential: null, errorCode: 'SignatureDoesNotMatch' };
   }
 
