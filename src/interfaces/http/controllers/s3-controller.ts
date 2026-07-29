@@ -489,7 +489,10 @@ const handleGetObject = async (
   }
   const ifNoneMatch = headers['if-none-match'];
   if (ifNoneMatch && ifNoneMatch === etag) {
-    return new Response(null, { status: 304 });
+    return new Response(null, { status: 304, headers: s3Headers(reqId, {
+      etag, 'content-type': file.mimeType, 'content-length': String(file.sizeBytes),
+      'last-modified': lastModified.toUTCString(), 'x-amz-version-id': 'null',
+    }) });
   }
 
   // H3: Conditional headers — If-Modified-Since / If-Unmodified-Since
@@ -498,7 +501,10 @@ const handleGetObject = async (
   if (ifModifiedSince) {
     const since = new Date(ifModifiedSince);
     if (!Number.isNaN(since.getTime()) && lastModified.getTime() <= since.getTime()) {
-      return new Response(null, { status: 304 });
+      return new Response(null, { status: 304, headers: s3Headers(reqId, {
+        etag, 'content-type': file.mimeType, 'content-length': String(file.sizeBytes),
+        'last-modified': lastModified.toUTCString(), 'x-amz-version-id': 'null',
+      }) });
     }
   }
   const ifUnmodifiedSince = headers['if-unmodified-since'];
@@ -739,7 +745,10 @@ const handleHeadObject = async (
   }
   const ifNoneMatch = headers['if-none-match'];
   if (ifNoneMatch && ifNoneMatch === etag) {
-    return new Response(null, { status: 304 });
+    return new Response(null, { status: 304, headers: s3Headers(reqId, {
+      etag, 'content-type': file.mimeType, 'content-length': String(file.sizeBytes),
+      'last-modified': lastModified.toUTCString(), 'x-amz-version-id': 'null',
+    }) });
   }
 
   // H3: Conditional headers for HEAD — If-Modified-Since / If-Unmodified-Since
@@ -748,7 +757,10 @@ const handleHeadObject = async (
   if (ifModifiedSince) {
     const since = new Date(ifModifiedSince);
     if (!Number.isNaN(since.getTime()) && lastModified.getTime() <= since.getTime()) {
-      return new Response(null, { status: 304 });
+      return new Response(null, { status: 304, headers: s3Headers(reqId, {
+        etag, 'content-type': file.mimeType, 'content-length': String(file.sizeBytes),
+        'last-modified': lastModified.toUTCString(), 'x-amz-version-id': 'null',
+      }) });
     }
   }
   const ifUnmodifiedSince = headers['if-unmodified-since'];
