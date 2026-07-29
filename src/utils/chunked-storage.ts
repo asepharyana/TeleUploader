@@ -127,6 +127,8 @@ export const uploadFileInTelegramChunks = async (input: {
     // finish before reading more — prevents unbounded memory growth.
     if (inFlight.size >= config.uploadConcurrency * 2) {
       await Promise.race(inFlight);
+      // Yield microtask to let .finally() run and remove from inFlight
+      await new Promise((resolve) => setTimeout(resolve, 0));
     }
   }
 
