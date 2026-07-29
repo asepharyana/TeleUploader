@@ -903,11 +903,48 @@ const handlePutObject = async (
     await cleanupTempFile(streamed.tempPath);
     return s3ErrorResponse(
       bodyHashError.errorCode || 'BadDigest',
-      'The Content-MD5 or x-amz-content-sha256 you specified did not match what we received.',
+      'The x-amz-content-sha256 you specified did not match what we received.',
       `/${bucket}/${key}`,
       400,
       reqId,
     );
+  }
+
+  // Content-Length validation: ensure actual body size matches header
+  const contentLengthHeader = headers['content-length'];
+  if (contentLengthHeader) {
+    const declaredLength = Number.parseInt(contentLengthHeader, 10);
+    if (Number.isFinite(declaredLength) && declaredLength !== streamed.sizeBytes) {
+      await cleanupTempFile(streamed.tempPath);
+      return s3ErrorResponse(
+        'IncompleteBody',
+        'You did not provide the number of bytes specified by the Content-Length HTTP header.',
+        `/${bucket}/${key}`,
+        400,
+        reqId,
+      );
+    }
+  }
+
+  // Content-MD5 validation: verify MD5 when Content-MD5 header is present
+  const contentMd5 = headers['content-md5'];
+  if (contentMd5) {
+    const computedMd5 = Buffer.from(
+      await crypto.subtle.digest(
+        'MD5',
+        new Uint8Array(await Bun.file(streamed.tempPath).arrayBuffer()),
+      ),
+    ).toString('base64');
+    if (contentMd5 !== computedMd5) {
+      await cleanupTempFile(streamed.tempPath);
+      return s3ErrorResponse(
+        'BadDigest',
+        'The Content-MD5 you specified did not match what we received.',
+        `/${bucket}/${key}`,
+        400,
+        reqId,
+      );
+    }
   }
 
   // M12: Reject oversized bodies
@@ -1239,7 +1276,10 @@ const handleListObjectsV1 = async (
 
   const prefix = searchParams.get('prefix') || '';
   const delimiter = searchParams.get('delimiter') || null;
-  const maxKeys = Math.min(Number.parseInt(searchParams.get('max-keys') || '1000', 10), 1000);
+  const maxKeys = Math.max(
+    1,
+    Math.min(Number.parseInt(searchParams.get('max-keys') || '1000', 10), 1000),
+  );
   const marker = searchParams.get('marker') || null;
   const encodingType = searchParams.get('encoding-type') || null;
 

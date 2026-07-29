@@ -282,10 +282,11 @@ export const verifySignature = async (
     return { isValid: false, credential: null, errorCode: 'NotImplemented' };
   }
 
-  // H4: Compute hash from actual body instead of trusting header blindly.
-  // For streaming bodies (body === null), we cannot hash at this point —
-  // the caller (controller) must verify body hash after streaming.
-  const hashedPayload = await getHashedPayload(body);
+  // CRITICAL: Use the x-amz-content-sha256 header value in the canonical
+  // request because that's what the client signed. The actual body hash is
+  // verified by verifyBodyHash() after streaming, ensuring integrity without
+  // breaking SigV4.
+  const hashedPayload = contentSha256 || (await getHashedPayload(body));
 
   const canonicalRequest = buildCanonicalRequest(
     method,
