@@ -56,7 +56,8 @@ CREATE TABLE IF NOT EXISTS multipart_uploads (
   s3_key TEXT NOT NULL,
   initiated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   status VARCHAR DEFAULT 'in_progress',
-  initiated_by TEXT
+  initiated_by TEXT,
+  content_type TEXT
 );
 
 CREATE TABLE IF NOT EXISTS multipart_parts (
