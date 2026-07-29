@@ -59,18 +59,18 @@ const _handleMaybeS3Root = (req: Request): Response | Promise<Response> => {
 };
 
 /**
- * Wraps `handleS3Request` with rate limiting.
+ * Dispatches an S3 request directly, bypassing rate limiting.
  *
- * S3 API calls (used by Docker registry) are rate-limited per client IP to
- * prevent resource exhaustion. The default limit (150 req/60s window) allows
- * concurrent layer pushes while still providing protection.
+ * S3 API calls (used by Docker registry for blob pushes) must not be
+ * rate-limited — large concurrent layer uploads would hit the limit and
+ * fail. The Docker registry client retries on 5xx, not 4xx, so a 429
+ * would abort the entire push.
  *
  * @param req - The incoming S3 request.
- * @returns The S3 response or a 429 Too Many Requests error.
+ * @returns The S3 response.
  */
-const handleS3WithRateLimit = (req: Request): Promise<Response> => {
-  const handler = () => handleS3Request(req, getS3RouteBucket(req));
-  return withRateLimit(handler as (req: Request) => Promise<Response>)(req);
+const handleS3Direct = (req: Request): Promise<Response> => {
+  return handleS3Request(req, getS3RouteBucket(req));
 };
 
 /**
@@ -108,7 +108,7 @@ export const routes = {
     GET: (req: Request): Promise<Response> => {
       const headers = Object.fromEntries(req.headers);
       if (shouldHandleS3(req, headers)) {
-        return handleS3WithRateLimit(req);
+        return handleS3Direct(req);
       }
       return handleHome();
     },
@@ -118,14 +118,14 @@ export const routes = {
       }
       const headers = Object.fromEntries(req.headers);
       if (shouldHandleS3(req, headers)) {
-        return handleS3WithRateLimit(req);
+        return handleS3Direct(req);
       }
-      return new Response('Not Allowed', { status: 405 });
+      return Promise.resolve(new Response('Not Allowed', { status: 405 }));
     },
-    HEAD: handleS3WithRateLimit,
-    DELETE: handleS3WithRateLimit,
-    POST: handleS3WithRateLimit,
-    OPTIONS: handleS3WithRateLimit,
+    HEAD: handleS3Direct,
+    DELETE: handleS3Direct,
+    POST: handleS3Direct,
+    OPTIONS: handleS3Direct,
   },
   '/api/v1/auth/login': {
     POST: withRateLimit(handleLogin),

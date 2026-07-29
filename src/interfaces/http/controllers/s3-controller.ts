@@ -43,7 +43,7 @@ import {
   parseDeleteObjectsBody,
   s3ErrorResponse,
 } from '../../../utils/s3/xml';
-import { forwardToStorage, getFileInfo } from '../../../utils/telegram';
+import { botPool } from '../../../infrastructure/telegram/bot-pool';
 
 /**
  * The default S3 region returned when no region is explicitly configured.
@@ -487,7 +487,7 @@ const handleGetObject = async (
   }
 
   // Regular Telegram object
-  const fileInfo = await getFileInfo(file.telegramFileId);
+  const fileInfo = await botPool.getFileInfo(file.telegramFileId);
   const redirectUrl = `https://api.telegram.org/file/bot${fileInfo.bot_token}/${fileInfo.file_path}`;
 
   const totalSize = file.sizeBytes;
@@ -592,7 +592,7 @@ const handleGetMultipartObject = async (
 
   const sources: ObjectPartSource[] = [];
   for (const part of parts) {
-    const fileInfo = await getFileInfo(part.telegramFileId);
+    const fileInfo = await botPool.getFileInfo(part.telegramFileId);
     sources.push({
       telegramFileId: part.telegramFileId,
       telegramUrl: `https://api.telegram.org/file/bot${fileInfo.bot_token}/${fileInfo.file_path}`,
@@ -797,7 +797,12 @@ const handlePutObject = async (
     return s3Response(null, 200, reqId, { etag: `"${streamed.fileHash}"` });
   }
 
-  return await storeFileFromTemp(streamed, key, bucketRecord, contentType, reqId);
+  try {
+    return await storeFileFromTemp(streamed, key, bucketRecord, contentType, reqId);
+  } catch (uploadError) {
+    await cleanupTempFile(streamed.tempPath);
+    throw uploadError;
+  }
 };
 
 /**
@@ -848,7 +853,7 @@ const storeFileFromTemp = async (
     return s3Response(null, 200, reqId, { etag: `"${file.fileHash}"` });
   }
 
-  const forwardResult = await forwardToStorage(
+  const forwardResult = await botPool.forwardToStorage(
     createReadStream(streamed.tempPath),
     partFileNamePrefix,
     'document',
@@ -1310,7 +1315,7 @@ const handleUploadPart = async (
     );
   }
 
-  const forwardResult = await forwardToStorage(
+  const forwardResult = await botPool.forwardToStorage(
     createReadStream(tempPath),
     `mp-${uploadId}-part-${partNumber}`,
     'document',

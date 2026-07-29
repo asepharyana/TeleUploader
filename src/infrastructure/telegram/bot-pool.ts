@@ -16,16 +16,65 @@ import {
 import { enqueueUpload } from './upload-queue';
 
 /**
- * Sleep for a given number of seconds.
+ * Sleep for a given number of milliseconds.
  *
- * Used as a backoff mechanism when all bots in the pool are rate-limited.
+ * Used as a backoff mechanism when all bots in the pool are rate-limited
+ * or when retrying transient Telegram API errors.
  *
- * @param seconds - Number of seconds to sleep.
+ * @param ms - Number of milliseconds to sleep.
  * @returns A promise that resolves after the specified delay.
  */
-const sleep = (seconds: number): Promise<void> => {
-  return new Promise((resolve) => setTimeout(resolve, seconds * 1000));
+const sleep = (ms: number): Promise<void> => {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 };
+
+/**
+ * Determines whether an error from the Telegram API is likely transient
+ * and worth retrying.
+ *
+ * Transient telegrams errors include: network timeouts, 5xx server errors,
+ * and "Too Many Requests" (429) which is already handled by bot rotation
+ * but is also transient at the network level.
+ *
+ * @param error - The caught error object.
+ * @returns True if the error is likely transient and worth retrying.
+ */
+const isTransientError = (error: unknown): boolean => {
+  const str = error instanceof Error ? error.message : String(error);
+  const transientPatterns = [
+    'retry after',
+    'timeout',
+    'Timed out',
+    'etimedout',
+    'econnrefused',
+    'econnreset',
+    'ECONNREFUSED',
+    'ECONNRESET',
+    'ETIMEDOUT',
+    '5xx',
+    '502',
+    '503',
+    '504',
+    'Bad Gateway',
+    'Service Unavailable',
+    'Gateway Timeout',
+    'socket hang up',
+    'socket closed',
+    'fetch failed',
+    'network error',
+    'network timeout',
+    'API closed',
+    'read ECONNRESET',
+    'write EPIPE',
+  ];
+  return transientPatterns.some((p) => str.toLowerCase().includes(p.toLowerCase()));
+};
+
+/**
+ * Maximum number of retries for transient Telegram API errors
+ * before giving up and propagating the error to the caller.
+ */
+const MAX_TRANSIENT_RETRIES = 3;
 
 /**
  * Manages a pool of Telegram bots with automatic rotation and rate-limit handling.
@@ -125,33 +174,57 @@ export class BotPool implements ITelegramService {
     fileName: string,
     fileType: string,
   ): Promise<ForwardResult> {
-    try {
-      const result = await this.enqueueUpload<TelegramMessageResult>(async () => {
-        const filePayload = { source: fileChunk, filename: fileName };
-        const sendMethodName = sendMethodMap[fileType] || 'sendDocument';
-        const payload = buildSendPayload(fileType, fileName);
+    let lastError: unknown;
+    let attempt = 0;
 
-        return this.executeWithBotRetry<TelegramMessageResult>((activeBot) => {
-          const telegram = activeBot.telegram as unknown as Record<string, SendMethod>;
-          return telegram[sendMethodName](config.storageChatId, filePayload, payload);
+    while (attempt <= MAX_TRANSIENT_RETRIES) {
+      attempt++;
+      try {
+        const result = await this.enqueueUpload<TelegramMessageResult>(async () => {
+          const filePayload = { source: fileChunk, filename: fileName };
+          const sendMethodName = sendMethodMap[fileType] || 'sendDocument';
+          const payload = buildSendPayload(fileType, fileName);
+
+          return this.executeWithBotRetry<TelegramMessageResult>((activeBot) => {
+            const telegram = activeBot.telegram as unknown as Record<string, SendMethod>;
+            return telegram[sendMethodName](config.storageChatId, filePayload, payload);
+          });
         });
-      });
 
-      const uploadedFile = extractUploadedFile(result, fileType);
-      logger.info('File forwarded to storage', { fileName, message: result.message_id });
+        const uploadedFile = extractUploadedFile(result, fileType);
+        logger.info('File forwarded to storage', { fileName, message: result.message_id });
 
-      return {
-        telegramFileId: uploadedFile?.file_id || '',
-        telegramFileUniqueId: uploadedFile?.file_unique_id || '',
-        storageMessageId: result.message_id,
-      };
-    } catch (error: unknown) {
-      logger.error('Failed to forward file to storage', {
-        fileName,
-        error: error instanceof Error ? error.message : String(error),
-      });
-      throw error;
+        return {
+          telegramFileId: uploadedFile?.file_id || '',
+          telegramFileUniqueId: uploadedFile?.file_unique_id || '',
+          storageMessageId: result.message_id,
+        };
+      } catch (error: unknown) {
+        lastError = error;
+        const errorStr = error instanceof Error ? error.message : String(error);
+
+        if (attempt <= MAX_TRANSIENT_RETRIES && isTransientError(error)) {
+          const backoffMs = Math.min(1000 * 2 ** attempt, 10_000);
+          logger.warn(`Transient error forwarding file, retrying (${attempt}/${MAX_TRANSIENT_RETRIES})`, {
+            fileName,
+            error: errorStr,
+            backoffMs,
+          });
+          await sleep(backoffMs);
+          continue;
+        }
+
+        logger.error('Failed to forward file to storage', {
+          fileName,
+          error: errorStr,
+          attempt,
+        });
+        throw error;
+      }
     }
+
+    // Should not reach here — last iteration throws above
+    throw lastError;
   }
 
   /**
@@ -167,26 +240,39 @@ export class BotPool implements ITelegramService {
   async getFileInfo(telegramFileId: string): Promise<TelegramFileInfo> {
     let lastError: unknown;
     for (const activeBot of this.bots) {
-      try {
-        const result = await activeBot.telegram.getFile(telegramFileId);
-        const fileData = result as unknown as Omit<TelegramFileInfo, 'bot_token'>;
-        return {
-          file_size: fileData.file_size || 0,
-          mime_type: fileData.mime_type || 'application/octet-stream',
-          file_path: fileData.file_path || '',
-          bot_token: activeBot.telegram.token,
-        };
-      } catch (error: unknown) {
-        lastError = error;
-        const errorStr = error instanceof Error ? error.message : String(error);
-        if (
-          errorStr.includes('wrong file_id') ||
-          errorStr.includes('file is temporarily unavailable') ||
-          errorStr.includes('retry after')
-        ) {
-          continue;
+      for (let retry = 0; retry <= MAX_TRANSIENT_RETRIES; retry++) {
+        try {
+          const result = await activeBot.telegram.getFile(telegramFileId);
+          const fileData = result as unknown as Omit<TelegramFileInfo, 'bot_token'>;
+          return {
+            file_size: fileData.file_size || 0,
+            mime_type: fileData.mime_type || 'application/octet-stream',
+            file_path: fileData.file_path || '',
+            bot_token: activeBot.telegram.token,
+          };
+        } catch (error: unknown) {
+          lastError = error;
+          const errorStr = error instanceof Error ? error.message : String(error);
+          // Belongs to a different bot — skip to next bot immediately
+          if (
+            errorStr.includes('wrong file_id') ||
+            errorStr.includes('file is temporarily unavailable')
+          ) {
+            break; // skip to next bot
+          }
+          // Transient — retry on the same bot
+          if (retry < MAX_TRANSIENT_RETRIES && isTransientError(error)) {
+            const backoffMs = Math.min(1000 * 2 ** (retry + 1), 5_000);
+            logger.warn(
+              `Transient error getting file info, retrying bot ${activeBot.telegram.token.slice(0, 8)}... (${retry + 1}/${MAX_TRANSIENT_RETRIES})`,
+              { telegramFileId, error: errorStr, backoffMs },
+            );
+            await sleep(backoffMs);
+            continue;
+          }
+          // Non-transient or exhausted retries — try next bot
+          break;
         }
-        throw error;
       }
     }
 
