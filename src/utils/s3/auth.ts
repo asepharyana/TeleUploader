@@ -329,7 +329,6 @@ export const verifySignature = async (
   const expectedSignature = await hmacHex(signingKey, stringToSign);
 
   if (!timingSafeCompare(expectedSignature, parsed.signature)) {
-    console.error(`SIG: uri=${canonicalUri} signed=${parsed.signedHeaders}`);
     return { isValid: false, credential: null, errorCode: 'SignatureDoesNotMatch' };
   }
 
