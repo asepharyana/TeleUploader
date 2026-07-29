@@ -424,6 +424,95 @@ const handleGetBucketVersioning = async (bucketName: string, reqId: string): Pro
   });
 };
 
+// ─────── Conditional Headers Helper ──────
+
+/**
+ * S3-compatible response for 304 Not Modified.
+ */
+const notModifiedResponse = (
+  reqId: string,
+  etag: string,
+  mimeType: string,
+  sizeBytes: number,
+  lastModified: Date,
+): Response =>
+  new Response(null, {
+    status: 304,
+    headers: s3Headers(reqId, {
+      etag,
+      'content-type': mimeType,
+      'content-length': String(sizeBytes),
+      'last-modified': lastModified.toUTCString(),
+      'x-amz-version-id': 'null',
+    }),
+  });
+
+/**
+ * S3-compatible response for 412 Precondition Failed.
+ */
+const preconditionFailedResponse = (path: string, reqId: string): Response =>
+  s3ErrorResponse(
+    'PreconditionFailed',
+    'At least one of the pre-conditions you specified did not hold.',
+    path,
+    412,
+    reqId,
+  );
+
+/**
+ * Checks conditional headers (If-Match, If-None-Match, If-Modified-Since,
+ * If-Unmodified-Since) and returns a prepared Response if the condition
+ * is not satisfied, or `null` to let the request proceed.
+ *
+ * @returns A 304 / 412 Response when a condition fails, or `null` to continue.
+ */
+const checkConditionalHeaders = (
+  headers: Record<string, string>,
+  file: {
+    mimeType: string;
+    sizeBytes: number;
+    fileHash: string | null;
+    createdAt: Date | string | number;
+  },
+  path: string,
+  reqId: string,
+): Response | null => {
+  const etag = `"${file.fileHash || nanoid(16)}"`;
+  const lastModified = file.createdAt instanceof Date ? file.createdAt : new Date(file.createdAt);
+
+  // If-Match
+  const ifMatch = headers['if-match'];
+  if (ifMatch && ifMatch !== '*' && ifMatch !== etag) {
+    return preconditionFailedResponse(path, reqId);
+  }
+
+  // If-None-Match
+  const ifNoneMatch = headers['if-none-match'];
+  if (ifNoneMatch && ifNoneMatch === etag) {
+    return notModifiedResponse(reqId, etag, file.mimeType, file.sizeBytes, lastModified);
+  }
+
+  // If-Modified-Since
+  const ifModifiedSince = headers['if-modified-since'];
+  if (ifModifiedSince) {
+    const since = new Date(ifModifiedSince);
+    if (!Number.isNaN(since.getTime()) && lastModified.getTime() <= since.getTime()) {
+      return notModifiedResponse(reqId, etag, file.mimeType, file.sizeBytes, lastModified);
+    }
+  }
+
+  // If-Unmodified-Since
+  const ifUnmodifiedSince = headers['if-unmodified-since'];
+  if (ifUnmodifiedSince) {
+    const since = new Date(ifUnmodifiedSince);
+    if (!Number.isNaN(since.getTime()) && lastModified.getTime() > since.getTime()) {
+      return preconditionFailedResponse(path, reqId);
+    }
+  }
+
+  return null;
+};
+
 // ─────── Object Operations ───────
 
 /**
@@ -468,62 +557,10 @@ const handleGetObject = async (
       reqId,
     );
 
-  // H3: Conditional headers — If-Match / If-None-Match
-  const etag = `"${file.fileHash || nanoid(16)}"`;
-  const lastModified = file.createdAt instanceof Date ? file.createdAt : new Date(file.createdAt);
-  const ifMatch = headers['if-match'];
-  if (ifMatch && ifMatch !== '*' && ifMatch !== etag) {
-    return s3ErrorResponse(
-      'PreconditionFailed',
-      'At least one of the pre-conditions you specified did not hold.',
-      `/${bucket}/${key}`,
-      412,
-      reqId,
-    );
-  }
-  const ifNoneMatch = headers['if-none-match'];
-  if (ifNoneMatch && ifNoneMatch === etag) {
-    return new Response(null, {
-      status: 304,
-      headers: s3Headers(reqId, {
-        etag,
-        'content-type': file.mimeType,
-        'content-length': String(file.sizeBytes),
-        'last-modified': lastModified.toUTCString(),
-        'x-amz-version-id': 'null',
-      }),
-    });
-  }
-
-  // H3: Conditional headers — If-Modified-Since / If-Unmodified-Since
-  const ifModifiedSince = headers['if-modified-since'];
-  if (ifModifiedSince) {
-    const since = new Date(ifModifiedSince);
-    if (!Number.isNaN(since.getTime()) && lastModified.getTime() <= since.getTime()) {
-      return new Response(null, {
-        status: 304,
-        headers: s3Headers(reqId, {
-          etag,
-          'content-type': file.mimeType,
-          'content-length': String(file.sizeBytes),
-          'last-modified': lastModified.toUTCString(),
-          'x-amz-version-id': 'null',
-        }),
-      });
-    }
-  }
-  const ifUnmodifiedSince = headers['if-unmodified-since'];
-  if (ifUnmodifiedSince) {
-    const since = new Date(ifUnmodifiedSince);
-    if (!Number.isNaN(since.getTime()) && lastModified.getTime() > since.getTime()) {
-      return s3ErrorResponse(
-        'PreconditionFailed',
-        'At least one of the pre-conditions you specified did not hold.',
-        `/${bucket}/${key}`,
-        412,
-        reqId,
-      );
-    }
+  // H3: Conditional headers — If-Match / If-None-Match / If-Modified-Since / If-Unmodified-Since
+  const conditionResult = checkConditionalHeaders(headers, file, `/${bucket}/${key}`, reqId);
+  if (conditionResult) {
+    return conditionResult;
   }
 
   // Chunked storage object
@@ -736,62 +773,10 @@ const handleHeadObject = async (
       reqId,
     );
 
-  // H3: Conditional headers for HEAD — If-Match / If-None-Match
-  const etag = `"${file.fileHash || nanoid(16)}"`;
-  const lastModified = file.createdAt instanceof Date ? file.createdAt : new Date(file.createdAt);
-  const ifMatch = headers['if-match'];
-  if (ifMatch && ifMatch !== '*' && ifMatch !== etag) {
-    return s3ErrorResponse(
-      'PreconditionFailed',
-      'At least one of the pre-conditions you specified did not hold.',
-      `/${bucket}/${key}`,
-      412,
-      reqId,
-    );
-  }
-  const ifNoneMatch = headers['if-none-match'];
-  if (ifNoneMatch && ifNoneMatch === etag) {
-    return new Response(null, {
-      status: 304,
-      headers: s3Headers(reqId, {
-        etag,
-        'content-type': file.mimeType,
-        'content-length': String(file.sizeBytes),
-        'last-modified': lastModified.toUTCString(),
-        'x-amz-version-id': 'null',
-      }),
-    });
-  }
-
-  // H3: Conditional headers for HEAD — If-Modified-Since / If-Unmodified-Since
-  const ifModifiedSince = headers['if-modified-since'];
-  if (ifModifiedSince) {
-    const since = new Date(ifModifiedSince);
-    if (!Number.isNaN(since.getTime()) && lastModified.getTime() <= since.getTime()) {
-      return new Response(null, {
-        status: 304,
-        headers: s3Headers(reqId, {
-          etag,
-          'content-type': file.mimeType,
-          'content-length': String(file.sizeBytes),
-          'last-modified': lastModified.toUTCString(),
-          'x-amz-version-id': 'null',
-        }),
-      });
-    }
-  }
-  const ifUnmodifiedSince = headers['if-unmodified-since'];
-  if (ifUnmodifiedSince) {
-    const since = new Date(ifUnmodifiedSince);
-    if (!Number.isNaN(since.getTime()) && lastModified.getTime() > since.getTime()) {
-      return s3ErrorResponse(
-        'PreconditionFailed',
-        'At least one of the pre-conditions you specified did not hold.',
-        `/${bucket}/${key}`,
-        412,
-        reqId,
-      );
-    }
+  // H3: Conditional headers for HEAD — If-Match / If-None-Match / If-Modified-Since / If-Unmodified-Since
+  const headConditionResult = checkConditionalHeaders(headers, file, `/${bucket}/${key}`, reqId);
+  if (headConditionResult) {
+    return headConditionResult;
   }
 
   return s3Response(null, 200, reqId, {

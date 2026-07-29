@@ -5,10 +5,9 @@ import { startBot } from './interfaces/bot/handler';
 import { handleS3Request } from './interfaces/http/controllers/s3-controller';
 import { cleanupRateLimitCache } from './interfaces/http/middleware/rate-limit';
 import { routes } from './interfaces/http/routes/index';
-import { isS3Request } from './interfaces/s3/auth';
-import { extractS3BucketFromHost } from './interfaces/s3/virtual-host';
 import { logger } from './shared/logger/index';
 import { metricsCollector } from './shared/metrics/index';
+import { getS3RouteBucket, shouldHandleS3 } from './shared/utils/s3-detection';
 
 // ─── Auto-run migration at startup ──────────────────────────────────────────
 try {
@@ -18,36 +17,10 @@ try {
   logger.warn('Auto-migration skipped (non-fatal)');
 }
 
-const getS3RouteBucket = (req: Request): string | null => {
-  const host = req.headers.get('host') || '';
-  return extractS3BucketFromHost(host, config.s3VhostDomains);
-};
-
-const shouldHandleS3 = (req: Request, headers: Record<string, string>): boolean => {
-  const url = new URL(req.url);
-  return Boolean(
-    getS3RouteBucket(req) || isS3Request(headers) || url.searchParams.has('X-Amz-Signature'),
-  );
-};
-
-const _handleMaybeS3Root = (req: Request): Response | Promise<Response> => {
-  if (req.method === 'OPTIONS') {
-    return handleS3Request(req, getS3RouteBucket(req));
-  }
-  const headers = Object.fromEntries(req.headers);
-  if (shouldHandleS3(req, headers)) {
-    return handleS3Request(req, getS3RouteBucket(req));
-  }
-  return new Response('Not Allowed', { status: 405 });
-};
-
 const server = serve({
   port: config.port,
   routes,
   fetch: async (req: Request) => {
-    if (req.method === 'OPTIONS') {
-      return handleS3Request(req, getS3RouteBucket(req));
-    }
     const headers = Object.fromEntries(req.headers);
     if (shouldHandleS3(req, headers)) {
       return handleS3Request(req, getS3RouteBucket(req));

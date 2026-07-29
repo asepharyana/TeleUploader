@@ -2,7 +2,7 @@ import { createReadStream } from 'node:fs';
 import { nanoid } from 'nanoid';
 import type { TelegramFileInfo } from '../../../domain/ports/telegram-service';
 import { fileInfoCache } from '../../../infrastructure/cache/index';
-import { chunkedStorage } from '../../../infrastructure/di';
+import { chunkedStorage, fileRepository } from '../../../infrastructure/di';
 import { botPool } from '../../../infrastructure/telegram/bot-pool';
 import logger from '../../../shared/logger/index';
 import { cleanupTempFile, formatCreatedAt, getErrorMessage } from '../../../shared/utils/file';
@@ -18,14 +18,6 @@ type RequestWithParams = Request & {
     public_id?: string;
   };
 };
-
-/**
- * Maps a string into a `string | string[]` for cookie append operations.
- *
- * @param value - The string value to wrap.
- * @returns The value as a single-element tuple.
- */
-const _asArray = (value: string): string[] => [value];
 
 /**
  * Resolves Telegram file metadata for a given file ID, using the in-memory
@@ -103,8 +95,7 @@ export const handleFileRedirect = async (req: RequestWithParams): Promise<Respon
       return fail(400, 'Missing file id');
     }
 
-    const { findFileByPublicId } = await import('../../../db/files');
-    const file = await findFileByPublicId(publicId);
+    const file = await fileRepository.findByPublicId(publicId);
     if (!file) {
       logger.warn('File not found', { publicId });
       return fail(404, 'File not found');
@@ -193,8 +184,7 @@ export const handleFileInfo = async (req: RequestWithParams): Promise<Response> 
       return fail(400, 'Missing file id');
     }
 
-    const { findFileByPublicId } = await import('../../../db/files');
-    const file = await findFileByPublicId(publicId);
+    const file = await fileRepository.findByPublicId(publicId);
     if (!file) {
       logger.warn('File not found', { publicId });
       return fail(404, 'File not found');

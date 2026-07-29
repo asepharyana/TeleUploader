@@ -21,14 +21,19 @@ type FileInfoBody = {
 
 type JsonBody = ErrorBody | FileInfoBody | Record<string, unknown>;
 
-type MockFileRecord = Record<string, unknown>;
-
-type MockSelectChain = {
-  from: () => {
-    where: () => {
-      limit: () => Promise<MockFileRecord[]>;
-    };
-  };
+type MockFileRecord = {
+  publicId: string;
+  fileName: string;
+  mimeType: string;
+  sizeBytes: number;
+  fileType: string;
+  uploaderId?: number;
+  createdAt?: Date;
+  telegramFileId?: string;
+  storageBackend?: string | null;
+  archiveEntryName?: string | null;
+  fileHash?: string | null;
+  archiveTelegramFileId?: string | null;
 };
 
 const requestWithPublicId = (url: string, publicId: string): RequestWithParams => {
@@ -41,25 +46,11 @@ const responseJson = async <T extends JsonBody>(res: Response): Promise<T> => {
   return (await res.json()) as T;
 };
 
-// Mock database layer
-const emptySelectChain = (): MockSelectChain => ({
-  from: () => ({
-    where: () => ({
-      limit: () => Promise.resolve([]),
-    }),
-  }),
-});
+// Mock the DI module — file-controller imports fileRepository + chunkedStorage from here
+const mockFindByPublicId = mock(
+  (_publicId: string): Promise<MockFileRecord | null> => Promise.resolve(null),
+);
 
-const mockSelect = mock(() => emptySelectChain());
-
-mock.module('../src/db/files', () => ({
-  findFileByPublicId: async () => {
-    const chain = mockSelect();
-    return (await chain.from().where().limit())[0] || null;
-  },
-}));
-
-// Mock telegram utils
 const mockGetFileInfo = mock(async (_telegramFileId: string) => ({
   file_size: 98765,
   mime_type: 'image/jpeg',
@@ -67,27 +58,87 @@ const mockGetFileInfo = mock(async (_telegramFileId: string) => ({
   bot_token: '123456:ABC-DEF',
 }));
 
-mock.module('../src/utils/telegram', () => ({
-  forwardToStorage: async () => ({
-    telegramFileId: 'mock-tg-id',
-    telegramFileUniqueId: 'mock-tg-unique',
-    storageMessageId: 12345,
-  }),
-  getFileInfo: mockGetFileInfo,
+const mockCreateChunkedObjectResponse = mock(async () => new Response(null, { status: 200 }));
+
+mock.module('../src/infrastructure/di', () => ({
+  fileRepository: {
+    findByPublicId: mockFindByPublicId,
+    findByHash: async () => null,
+    findByUniqueId: async () => null,
+    findByBucketAndKey: async () => null,
+    create: async (data: Record<string, unknown>) => ({
+      ...data,
+      id: 'mock-id',
+      createdAt: new Date(),
+    }),
+    softDelete: async () => true,
+    softDeleteBatch: async () => 1,
+    countByBucket: async () => 0,
+    listByPrefix: async () => ({ objects: [], prefixes: [] }),
+    findOrphansByBucket: async () => [],
+  },
+  chunkedStorage: {
+    createChunkedObjectResponse: mockCreateChunkedObjectResponse,
+    buildChunkedObjectSources: async () => [],
+    uploadFileInTelegramChunks: async () => ({ parts: [], fileHash: '', totalSizeBytes: 0 }),
+    storeFileInTelegramChunks: async () => ({
+      id: 'mock-id',
+      publicId: 'mock-public',
+      telegramFileId: 'mock-tg',
+      telegramFileUniqueId: 'mock-tg-unique',
+      storageChatId: 0,
+      storageMessageId: 0,
+      fileName: 'mock',
+      mimeType: 'application/octet-stream',
+      sizeBytes: 0,
+      fileType: 'document',
+      uploaderId: 0,
+      fileHash: null,
+      archiveTelegramFileId: null,
+      archiveStorageMessageId: null,
+      archiveFileName: null,
+      archiveEntryName: null,
+      archiveMimeType: null,
+      archiveSizeBytes: null,
+      bucketId: null,
+      s3Key: null,
+      storageBackend: 'telegram',
+      isDeleted: false,
+      multipartUploadId: null,
+      partCount: null,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    }),
+  },
+}));
+
+// Mock botPool.getFileInfo used in file redirect
+mock.module('../src/infrastructure/telegram/bot-pool', () => ({
+  botPool: {
+    getFileInfo: mockGetFileInfo,
+    forwardToStorage: async () => ({
+      telegramFileId: 'mock-tg-id',
+      telegramFileUniqueId: 'mock-tg-unique',
+      storageMessageId: 12345,
+    }),
+    size: 1,
+    getEffectiveConcurrency: () => 1,
+  },
 }));
 
 describe('File Route Handlers', () => {
-  let handleFileRedirect: typeof import('../src/routes/files').handleFileRedirect;
-  let handleFileInfo: typeof import('../src/routes/files').handleFileInfo;
+  let handleFileRedirect: typeof import('../src/interfaces/http/controllers/file-controller').handleFileRedirect;
+  let handleFileInfo: typeof import('../src/interfaces/http/controllers/file-controller').handleFileInfo;
 
   beforeEach(async () => {
-    mockSelect.mockClear();
+    mockFindByPublicId.mockClear();
     mockGetFileInfo.mockClear();
+    mockCreateChunkedObjectResponse.mockClear();
 
     // Set up mock token
     process.env.BOT_TOKEN = '123456:ABC-DEF';
 
-    const filesRoute = await import('../src/routes/files');
+    const filesRoute = await import('../src/interfaces/http/controllers/file-controller');
     handleFileRedirect = filesRoute.handleFileRedirect;
     handleFileInfo = filesRoute.handleFileInfo;
   });
@@ -98,13 +149,7 @@ describe('File Route Handlers', () => {
 
   describe('handleFileRedirect', () => {
     it('should return 404 if file is not found in database', async () => {
-      mockSelect.mockImplementationOnce(() => ({
-        from: () => ({
-          where: () => ({
-            limit: () => Promise.resolve([]),
-          }),
-        }),
-      }));
+      mockFindByPublicId.mockImplementationOnce(async () => null);
 
       const req = requestWithPublicId('http://localhost:3000/f/missing-id', 'missing-id');
       const res = await handleFileRedirect(req);
@@ -114,22 +159,32 @@ describe('File Route Handlers', () => {
     });
 
     it('should redirect to telegram file url with 302', async () => {
-      mockSelect.mockImplementationOnce(() => ({
-        from: () => ({
-          where: () => ({
-            limit: () =>
-              Promise.resolve([
-                {
-                  id: 'uuid-123',
-                  publicId: 'test-id',
-                  telegramFileId: 'tg-file-id',
-                  fileName: 'test.jpg',
-                  mimeType: 'image/jpeg',
-                  sizeBytes: 100,
-                },
-              ]),
-          }),
-        }),
+      mockFindByPublicId.mockImplementationOnce(async () => ({
+        publicId: 'test-id',
+        telegramFileId: 'tg-file-id',
+        telegramFileUniqueId: 'tg-unique',
+        storageChatId: -100123,
+        storageMessageId: 42,
+        fileName: 'test.jpg',
+        mimeType: 'image/jpeg',
+        sizeBytes: 100,
+        fileType: 'photo',
+        uploaderId: 0,
+        fileHash: 'abc123',
+        archiveTelegramFileId: null,
+        archiveStorageMessageId: null,
+        archiveFileName: null,
+        archiveEntryName: null,
+        archiveMimeType: null,
+        archiveSizeBytes: null,
+        bucketId: null,
+        s3Key: null,
+        storageBackend: 'telegram',
+        isDeleted: false,
+        multipartUploadId: null,
+        partCount: null,
+        createdAt: new Date('2026-05-18T00:00:00.000Z'),
+        updatedAt: new Date('2026-05-18T00:00:00.000Z'),
       }));
 
       const req = requestWithPublicId('http://localhost:3000/f/test-id', 'test-id');
@@ -142,7 +197,7 @@ describe('File Route Handlers', () => {
     });
 
     it('should return 500 on database or external errors', async () => {
-      mockSelect.mockImplementationOnce(() => {
+      mockFindByPublicId.mockImplementationOnce(async () => {
         throw new Error('DB Connection Error');
       });
 
@@ -156,13 +211,7 @@ describe('File Route Handlers', () => {
 
   describe('handleFileInfo', () => {
     it('should return 404 if file is not found in database', async () => {
-      mockSelect.mockImplementationOnce(() => ({
-        from: () => ({
-          where: () => ({
-            limit: () => Promise.resolve([]),
-          }),
-        }),
-      }));
+      mockFindByPublicId.mockImplementationOnce(async () => null);
 
       const req = requestWithPublicId('http://localhost:3000/file/missing-id/info', 'missing-id');
       const res = await handleFileInfo(req);
@@ -174,21 +223,33 @@ describe('File Route Handlers', () => {
     it('should return file info JSON without internal fields', async () => {
       const dbFile = {
         publicId: 'test-id',
+        telegramFileId: 'tg-file-id',
+        telegramFileUniqueId: 'tg-unique',
+        storageChatId: -100123,
+        storageMessageId: 42,
         fileName: 'image.png',
         mimeType: 'image/png',
         sizeBytes: 2048,
         fileType: 'photo',
         uploaderId: 99999,
+        fileHash: null,
+        archiveTelegramFileId: null,
+        archiveStorageMessageId: null,
+        archiveFileName: null,
+        archiveEntryName: null,
+        archiveMimeType: null,
+        archiveSizeBytes: null,
+        bucketId: null,
+        s3Key: null,
+        storageBackend: 'telegram',
+        isDeleted: false,
+        multipartUploadId: null,
+        partCount: null,
         createdAt: new Date('2026-05-18T00:00:00.000Z'),
+        updatedAt: new Date('2026-05-18T00:00:00.000Z'),
       };
 
-      mockSelect.mockImplementationOnce(() => ({
-        from: () => ({
-          where: () => ({
-            limit: () => Promise.resolve([dbFile]),
-          }),
-        }),
-      }));
+      mockFindByPublicId.mockImplementationOnce(async () => dbFile);
 
       const req = requestWithPublicId('http://localhost:3000/file/test-id/info', 'test-id');
       const res = await handleFileInfo(req);
@@ -208,7 +269,7 @@ describe('File Route Handlers', () => {
     });
 
     it('should return 500 on database or external errors', async () => {
-      mockSelect.mockImplementationOnce(() => {
+      mockFindByPublicId.mockImplementationOnce(async () => {
         throw new Error('DB Connection Error');
       });
 

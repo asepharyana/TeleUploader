@@ -11,6 +11,7 @@ import { createGetObjectResponse, type ObjectPartSource } from '../../interfaces
 import type { RangeParseResult } from '../../interfaces/s3/range';
 import { type CompressionAlgorithm, maybeCompressChunk } from '../../shared/utils/compress';
 import { computeHash } from '../../shared/utils/file';
+import { asSafeChunkSize } from '../../shared/utils/validation';
 
 /**
  * Metadata about a single uploaded chunk (part) stored in Telegram.
@@ -69,20 +70,6 @@ export interface ChunkedFileInput {
   /** S3 object key if the file is also tracked in S3, or null */
   s3Key?: string | null;
 }
-
-/**
- * Validate and sanitise the Telegram chunk size.
- *
- * @param chunkSizeBytes - The desired chunk size in bytes.
- * @returns The validated chunk size.
- * @throws {Error} If the chunk size is not a safe positive integer.
- */
-const asSafeChunkSize = (chunkSizeBytes: number): number => {
-  if (!Number.isSafeInteger(chunkSizeBytes) || chunkSizeBytes <= 0) {
-    throw new Error('Invalid Telegram chunk size');
-  }
-  return chunkSizeBytes;
-};
 
 /**
  * Manages chunked storage of large files in Telegram.
