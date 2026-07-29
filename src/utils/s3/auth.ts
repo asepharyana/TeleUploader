@@ -166,9 +166,9 @@ const normalizeUri = (uri: string): string => {
     result.push(segment);
   }
 
-  // Reconstruct path (no trailing slash except root)
+  // Reconstruct path — preserved as-is (SigV4 includes trailing slashes)
   const normalized = result.length > 0 ? `/${result.join('/')}` : '/';
-  return normalized === '/' ? '/' : normalized.replace(/\/+$/, '');
+  return normalized;
 };
 
 const awsEncode = (value: string): string =>
@@ -331,22 +331,7 @@ export const verifySignature = async (
   const signingKey = await getSigningKey(s3SecretKey, dateStamp, region);
   const expectedSignature = await hmacHex(signingKey, stringToSign);
 
-  // TEMP DEBUG: log signature mismatch details
   if (!timingSafeCompare(expectedSignature, parsed.signature)) {
-    const debugInfo = {
-      method,
-      uri: canonicalUri,
-      canReq: canonicalRequest.slice(0, 400),
-      hashedCR: hashedCanonicalRequest,
-      amzDate,
-      dateStamp,
-      scope: credentialScope,
-      stringToSign: stringToSign.slice(0, 300),
-      expectedSig: expectedSignature,
-      receivedSig: parsed.signature,
-      accessKey: parsed.accessKey,
-    };
-    console.error('SIGV4_MISMATCH:' + JSON.stringify(debugInfo));
     return { isValid: false, credential: null, errorCode: 'SignatureDoesNotMatch' };
   }
 
