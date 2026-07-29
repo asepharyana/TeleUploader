@@ -48,6 +48,7 @@ const isTransientError = (error: unknown): boolean => {
 };
 
 const MAX_TRANSIENT_RETRIES = 3;
+const MAX_OUTER_RETRIES = 10;
 const TELEGRAM_API_TIMEOUT_MS = 120_000;
 const PER_BOT_CONCURRENCY = 1;
 
@@ -83,6 +84,8 @@ export class BotPool implements ITelegramService {
    * or in the skip set.
    */
   private selectBot(skipIndexes?: Set<number>): BotEntry | null {
+    if (this.bots.length === 0) return null;
+
     let best: BotEntry | null = null;
     let bestPending = Infinity;
 
@@ -133,9 +136,10 @@ export class BotPool implements ITelegramService {
   ): Promise<ForwardResult> {
     let lastError: unknown;
     const attemptedIndexes = new Set<number>();
+    let transientAttempts = 0;
 
-    // Outer retry loop — up to 10 attempts across all bots
-    for (let attempt = 0; attempt < 10; attempt++) {
+    // Outer retry loop — up to MAX_OUTER_RETRIES attempts across all bots
+    for (let attempt = 0; attempt < MAX_OUTER_RETRIES; attempt++) {
       const bot = this.selectBot(attemptedIndexes);
 
       if (!bot) {
@@ -221,7 +225,19 @@ export class BotPool implements ITelegramService {
         const retryAfterMatch = errorStr.match(/retry after (\d+)/i);
 
         if (retryAfterMatch) {
-          // Bot was rate-limited — already marked, try next bot
+          // 429 catch in outer block: serves as a safety net for errors that
+          // contain "retry after N" wording but were rethrown from the inner
+          // queue task's fallback path (e.g., non-429 errors with similar text).
+          logger.warn('Retry-after pattern caught in outer loop (safety net)', {
+            fileName,
+            error: errorStr,
+          });
+          continue;
+        }
+
+        // Transient error at the queue level — retry on next bot
+        if (transientAttempts < MAX_TRANSIENT_RETRIES && isTransientError(error)) {
+          transientAttempts++;
           continue;
         }
 
@@ -267,6 +283,10 @@ export class BotPool implements ITelegramService {
           }
           if (retry < MAX_TRANSIENT_RETRIES && isTransientError(error)) {
             const backoffMs = Math.min(1000 * 2 ** (retry + 1), 5_000);
+            logger.warn(
+              `Transient error getting file info, retrying bot ${bot.token.slice(0, 8)}... (${retry + 1}/${MAX_TRANSIENT_RETRIES})`,
+              { telegramFileId, error: errorStr, backoffMs },
+            );
             await sleep(backoffMs);
             continue;
           }
