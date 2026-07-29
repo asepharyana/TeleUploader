@@ -297,7 +297,7 @@ export const verifySignature = async (
   const hashedCanonicalRequest = await sha256Hex(canonicalRequest);
 
   // M1: Fall back to Date header if x-amz-date is missing
-  const amzDate = headers['x-amz-date'] || headers['date'] || '';
+  const amzDate = headers['x-amz-date'] || headers.date || '';
 
   // H5: Validate request freshness (clock skew / replay protection)
   if (amzDate) {
