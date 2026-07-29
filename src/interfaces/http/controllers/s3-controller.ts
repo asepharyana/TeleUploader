@@ -12,7 +12,13 @@ import {
 } from '../../../infrastructure/di';
 import { botPool } from '../../../infrastructure/telegram/bot-pool';
 import logger from '../../../shared/logger/index';
-import { cleanupTempFile, ensureExtension, getErrorMessage } from '../../../shared/utils/file';
+import {
+  cleanupTempFile,
+  DEFAULT_FILE_TYPE,
+  ensureExtension,
+  getErrorMessage,
+} from '../../../shared/utils/file';
+import { streamToTemp } from '../../../shared/utils/temp-stream';
 import { verifyBodyHash, verifyPresignedUrl, verifySignature } from '../../s3/auth';
 import { S3_CORS_HEADERS, s3Headers } from '../../s3/headers';
 import { createGetObjectResponse, type ObjectPartSource } from '../../s3/object-stream';
@@ -818,17 +824,10 @@ const streamBodyToTemp = async (
 ): Promise<{
   tempPath: string;
   fileHash: string;
-  md5Hash: string;
+  md5Hash?: string;
   sizeBytes: number;
   signatureBuffer: Buffer;
 }> => {
-  const tempPath = `/tmp/filedrop-s3-${nanoid()}`;
-  const writer = Bun.file(tempPath).writer();
-  const sha256 = new Bun.CryptoHasher('sha256');
-  const md5 = new Bun.CryptoHasher('md5');
-  let writerFailed = false;
-
-  // Handle body being null (GET/HEAD/DELETE or empty PUT)
   const reader = (
     body ??
     new ReadableStream({
@@ -836,56 +835,8 @@ const streamBodyToTemp = async (
         c.close();
       },
     })
-  ).getReader();
-  const SIGNATURE_BYTES = 16;
-  const signatureChunks: Buffer[] = [];
-  let signatureBytes = 0;
-  let sizeBytes = 0;
-
-  try {
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      const chunk = Buffer.from(value);
-      sizeBytes += chunk.byteLength;
-      sha256.update(chunk);
-      md5.update(chunk);
-      writer.write(chunk);
-
-      if (signatureBytes < SIGNATURE_BYTES) {
-        const remaining = SIGNATURE_BYTES - signatureBytes;
-        const sigChunk = chunk.subarray(0, remaining);
-        signatureChunks.push(sigChunk);
-        signatureBytes += sigChunk.byteLength;
-      }
-    }
-
-    try {
-      writer.end();
-    } catch {
-      writerFailed = true;
-    }
-
-    return {
-      tempPath,
-      fileHash: sha256.digest('hex'),
-      md5Hash: md5.digest('base64'),
-      sizeBytes,
-      signatureBuffer: Buffer.concat(signatureChunks, signatureBytes),
-    };
-  } catch (error) {
-    if (!writerFailed) {
-      try {
-        writer.end();
-      } catch {
-        /* writer may already be errored */
-      }
-    }
-    await cleanupTempFile(tempPath);
-    throw error;
-  } finally {
-    reader.releaseLock();
-  }
+  ).getReader() as ReadableStreamDefaultReader<Uint8Array>;
+  return streamToTemp(reader, { computeMd5: true, prefix: '/tmp/filedrop-s3-' });
 };
 
 /**
@@ -1049,7 +1000,7 @@ const storeFileFromTemp = async (
       fileName: finalFileName,
       mimeType,
       sizeBytes: streamed.sizeBytes,
-      fileType: 'document',
+      fileType: DEFAULT_FILE_TYPE,
       uploaderId: 0,
       bucketId,
       s3Key: key,
@@ -1080,7 +1031,7 @@ const storeFileFromTemp = async (
       fileName: finalFileName,
       mimeType,
       sizeBytes: streamed.sizeBytes,
-      fileType: 'document',
+      fileType: DEFAULT_FILE_TYPE,
       uploaderId: 0,
       fileHash: streamed.fileHash,
       bucketId,
@@ -1687,7 +1638,7 @@ const handleCompleteMultipartUpload = async (
       fileName: key.split('/').pop() || 'file',
       mimeType,
       sizeBytes: totalSize,
-      fileType: 'document',
+      fileType: DEFAULT_FILE_TYPE,
       uploaderId: 0,
       bucketId: multipart.bucketId,
       s3Key: key,

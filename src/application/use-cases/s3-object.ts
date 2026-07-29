@@ -1,4 +1,3 @@
-import { randomUUID } from 'node:crypto';
 import { gzipSync } from 'node:zlib';
 import { nanoid } from 'nanoid';
 import type { File } from '../../domain/entities/file';
@@ -10,7 +9,12 @@ import type { IFilePartRepository } from '../../domain/ports/file-part-repositor
 import type { IFileRepository, S3FileRecord } from '../../domain/ports/file-repository';
 import type { IMultipartRepository } from '../../domain/ports/multipart-repository';
 import type { ITelegramService, TelegramFileInfo } from '../../domain/ports/telegram-service';
-import { computeHash, ensureExtension, formatCreatedAt } from '../../shared/utils/file';
+import {
+  computeHash,
+  DEFAULT_FILE_TYPE,
+  ensureExtension,
+  formatCreatedAt,
+} from '../../shared/utils/file';
 
 // ─── Types ──────────────────────────────────────────────────────────
 
@@ -480,7 +484,7 @@ export function createPutObjectUseCase(deps: S3ObjectDeps) {
         throw new Error('Chunked upload produced no parts');
       }
 
-      const fileId = randomUUID();
+      const fileId = nanoid();
       const publicId = nanoid();
 
       await deps.fileRepo.create(
@@ -493,7 +497,7 @@ export function createPutObjectUseCase(deps: S3ObjectDeps) {
           fileName: finalFileName,
           mimeType,
           sizeBytes: chunkResult.totalSizeBytes,
-          fileType: 'document',
+          fileType: DEFAULT_FILE_TYPE,
           fileHash: chunkResult.fileHash,
           bucketId: bucket.id,
           s3Key: key,
@@ -539,7 +543,7 @@ export function createPutObjectUseCase(deps: S3ObjectDeps) {
         fileName: finalFileName,
         mimeType,
         sizeBytes: body.byteLength,
-        fileType: 'document',
+        fileType: DEFAULT_FILE_TYPE,
         fileHash: hash,
         bucketId: bucket.id,
         s3Key: key,

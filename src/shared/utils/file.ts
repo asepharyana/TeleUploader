@@ -51,6 +51,9 @@ interface FileMetadata {
   createdAt: Date | string | number;
 }
 
+/** Default file type used when no specific type can be determined. */
+export const DEFAULT_FILE_TYPE = 'document';
+
 /** Per-file-type size limits in bytes. */
 const FILE_TYPES: Record<string, number> = {
   document: 2 * 1024 * 1024 * 1024, // 2GB

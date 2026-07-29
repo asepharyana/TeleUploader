@@ -5,7 +5,13 @@ import { config } from '../../../env';
 import { bucketRepository, chunkedStorage, fileRepository } from '../../../infrastructure/di';
 import { botPool } from '../../../infrastructure/telegram/bot-pool';
 import logger from '../../../shared/logger/index';
-import { cleanupTempFile, ensureExtension, getErrorMessage } from '../../../shared/utils/file';
+import {
+  cleanupTempFile,
+  DEFAULT_FILE_TYPE,
+  ensureExtension,
+  getErrorMessage,
+} from '../../../shared/utils/file';
+import { streamToTemp } from '../../../shared/utils/temp-stream';
 
 /**
  * Route parameters extracted from the URL path.
@@ -163,67 +169,33 @@ export const handleUploadObjectV1 = async (
   }
 
   const key = (formData.get('key') as string) || file.name;
-  const tempPath = `/tmp/filedrop-web-${nanoid()}`;
-  const writer = Bun.file(tempPath).writer();
-  const reader = file.stream().getReader();
-  const hasher = new Bun.CryptoHasher('sha256');
-  const SIGNATURE_BYTES = 16;
-  const signatureChunks: Buffer[] = [];
-  let signatureBytes = 0;
-  let sizeBytes = 0;
-
-  try {
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      const chunk = Buffer.from(value);
-      sizeBytes += chunk.byteLength;
-      hasher.update(chunk);
-      writer.write(chunk);
-      if (signatureBytes < SIGNATURE_BYTES) {
-        const remaining = SIGNATURE_BYTES - signatureBytes;
-        const sigChunk = chunk.subarray(0, remaining);
-        signatureChunks.push(sigChunk);
-        signatureBytes += sigChunk.byteLength;
-      }
-    }
-    writer.end();
-  } catch (error) {
-    writer.end();
-    await cleanupTempFile(tempPath);
-    throw error;
-  } finally {
-    reader.releaseLock();
-  }
-
-  const hash = hasher.digest('hex');
-  const signatureBuffer = Buffer.concat(signatureChunks, signatureBytes);
+  const streamed = await streamToTemp(file.stream().getReader(), { prefix: '/tmp/filedrop-web-' });
   const { fileName: finalFileName, mimeType } = ensureExtension(
     key.split('/').pop() || 'file',
-    signatureBuffer,
+    streamed.signatureBuffer,
     file.type || 'application/octet-stream',
   );
 
   const partFileNamePrefix = `s3-${bucket.name}-${key.replace(/\//g, '_')}`;
 
-  if (sizeBytes > config.telegramChunkSizeBytes) {
+  if (streamed.sizeBytes > config.telegramChunkSizeBytes) {
     const uploadedFile = await chunkedStorage.storeFileInTelegramChunks({
-      tempPath,
+      tempPath: streamed.tempPath,
       partFileNamePrefix,
       fileName: finalFileName,
       mimeType,
-      sizeBytes,
-      fileType: 'document',
+      sizeBytes: streamed.sizeBytes,
+      fileType: DEFAULT_FILE_TYPE,
       uploaderId: 0,
       bucketId: bucket.id,
       s3Key: key,
     });
-    await cleanupTempFile(tempPath);
+    await cleanupTempFile(streamed.tempPath);
     return json(
       {
         key,
-        size: sizeBytes,
-        etag: hash,
+        size: streamed.sizeBytes,
+        etag: streamed.fileHash,
         downloadUrl: `${config.baseUrl}/f/${uploadedFile.publicId}`,
       },
       201,
@@ -231,7 +203,7 @@ export const handleUploadObjectV1 = async (
   }
 
   const forwardResult = await botPool.forwardToStorage(
-    createReadStream(tempPath),
+    createReadStream(streamed.tempPath),
     partFileNamePrefix,
     'document',
   );
@@ -247,20 +219,25 @@ export const handleUploadObjectV1 = async (
       storageMessageId: forwardResult.storageMessageId,
       fileName: finalFileName,
       mimeType,
-      sizeBytes,
-      fileType: 'document',
+      sizeBytes: streamed.sizeBytes,
+      fileType: DEFAULT_FILE_TYPE,
       uploaderId: 0,
-      fileHash: hash,
+      fileHash: streamed.fileHash,
       bucketId: bucket.id,
       s3Key: key,
       storageBackend: 'telegram',
     }),
   );
 
-  await cleanupTempFile(tempPath);
+  await cleanupTempFile(streamed.tempPath);
 
   return json(
-    { key, size: sizeBytes, etag: hash, downloadUrl: `${config.baseUrl}/f/${publicId}` },
+    {
+      key,
+      size: streamed.sizeBytes,
+      etag: streamed.fileHash,
+      downloadUrl: `${config.baseUrl}/f/${publicId}`,
+    },
     201,
   );
 };

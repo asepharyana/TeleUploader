@@ -5,7 +5,7 @@ import type { IBucketRepository } from '../../domain/ports/bucket-repository';
 import type { IFileRepository } from '../../domain/ports/file-repository';
 import type { IMultipartRepository } from '../../domain/ports/multipart-repository';
 import type { ITelegramService } from '../../domain/ports/telegram-service';
-import { computeHash } from '../../shared/utils/file';
+import { computeHash, DEFAULT_FILE_TYPE } from '../../shared/utils/file';
 
 // ─── Types ──────────────────────────────────────────────────────────
 
@@ -281,7 +281,7 @@ export function createCompleteMultipartUploadUseCase(deps: MultipartDeps) {
         fileName: input.key.split('/').pop() || 'file',
         mimeType: 'application/octet-stream',
         sizeBytes: totalSize,
-        fileType: 'document',
+        fileType: DEFAULT_FILE_TYPE,
         storageBackend: 'telegram',
         bucketId: multipart.bucketId,
         s3Key: input.key,

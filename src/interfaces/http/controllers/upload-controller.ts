@@ -1,4 +1,3 @@
-import { createWriteStream } from 'node:fs';
 import { nanoid } from 'nanoid';
 import { config } from '../../../env';
 import { chunkedStorage, fileRepository, uploadBatcher } from '../../../infrastructure/di';
@@ -15,6 +14,7 @@ import {
   getErrorMessage,
   getFileType,
 } from '../../../shared/utils/file';
+import { streamToTemp } from '../../../shared/utils/temp-stream';
 
 /**
  * Maximum allowed size (in bytes) for a base64 JSON upload.
@@ -93,7 +93,7 @@ const rejectOversizedRequest = (req: Request): Response | null => {
  * Streams a multipart `File` to a temporary file on disk while computing
  * its SHA-256 hash and extracting the signature (first 16 bytes).
  *
- * Backpressure from the write stream is respected via the drain event.
+ * Delegates to the shared {@link streamToTemp} utility.
  *
  * @param file - The multipart `File` object.
  * @param maxSizeBytes - Maximum allowed file size; an error is thrown if
@@ -102,67 +102,8 @@ const rejectOversizedRequest = (req: Request): Response | null => {
  * @throws {Error} When the file size exceeds `maxSizeBytes`.
  */
 const streamFileToTemp = async (file: File, maxSizeBytes: number): Promise<PreparedUpload> => {
-  const tempPath = `/tmp/filedrop-${nanoid()}`;
-  const writer = createWriteStream(tempPath);
-  const hasher = new Bun.CryptoHasher('sha256');
-  const reader = file.stream().getReader();
-  const signatureChunks: Buffer[] = [];
-  let signatureBytes = 0;
-  let sizeBytes = 0;
-
-  const writeChunk = async (chunk: Buffer): Promise<void> => {
-    if (!writer.write(chunk)) {
-      await new Promise<void>((resolve, reject) => {
-        writer.once('drain', resolve);
-        writer.once('error', reject);
-      });
-    }
-  };
-
-  const finishWriter = async (): Promise<void> => {
-    await new Promise<void>((resolve, reject) => {
-      writer.end(() => resolve());
-      writer.once('error', reject);
-    });
-  };
-
-  try {
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-
-      const chunk = Buffer.from(value);
-      sizeBytes += chunk.byteLength;
-      if (sizeBytes > maxSizeBytes) {
-        throw new Error('File size exceeds upload limit');
-      }
-
-      hasher.update(chunk);
-      await writeChunk(chunk);
-
-      if (signatureBytes < SIGNATURE_BYTES) {
-        const remaining = SIGNATURE_BYTES - signatureBytes;
-        const signatureChunk = chunk.subarray(0, remaining);
-        signatureChunks.push(signatureChunk);
-        signatureBytes += signatureChunk.byteLength;
-      }
-    }
-
-    await finishWriter();
-
-    return {
-      tempPath,
-      fileHash: hasher.digest('hex'),
-      sizeBytes,
-      signatureBuffer: Buffer.concat(signatureChunks, signatureBytes),
-    };
-  } catch (error) {
-    writer.destroy();
-    await cleanupTempFile(tempPath);
-    throw error;
-  } finally {
-    reader.releaseLock();
-  }
+  const result = await streamToTemp(file.stream().getReader(), { maxSizeBytes });
+  return result;
 };
 
 /**
