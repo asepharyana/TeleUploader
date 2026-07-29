@@ -1,6 +1,6 @@
 import { nanoid } from 'nanoid';
 import { type Context, Telegraf } from 'telegraf';
-import type { NewFile } from '../../domain/entities/file';
+import { buildNewFile } from '../../domain/entities/file-factory';
 import type { IFileRepository } from '../../domain/ports/file-repository';
 import type { ITelegramService } from '../../domain/ports/telegram-service';
 import { config } from '../../env';
@@ -8,6 +8,7 @@ import { DrizzleFileRepository } from '../../infrastructure/persistence/reposito
 import { botPool } from '../../infrastructure/telegram/bot-pool';
 import logger from '../../shared/logger/index';
 import {
+  checkFileSize,
   detectFileType,
   extractFileFromMessage,
   getErrorMessage,
@@ -127,10 +128,10 @@ export async function startBot(
             ctx.message.voice?.file_name ||
             'file';
 
-          const maxSize = getFileSizeLimit(fileType);
-
-          if (fileSize > maxSize) {
-            return ctx.reply(`File size exceeds ${maxSize / (1024 * 1024)}MB limit`);
+          if (!checkFileSize(fileSize, fileType)) {
+            return ctx.reply(
+              `File size exceeds ${getFileSizeLimit(fileType) / (1024 * 1024)}MB limit`,
+            );
           }
 
           const existing = await fileRepo.findByUniqueId(fileObj.file_unique_id);
@@ -149,33 +150,21 @@ export async function startBot(
           const result = await telegramService.forwardToStorage(file_id, fileName, fileType);
           const publicId = nanoid();
 
-          const uploaded: NewFile = {
-            publicId,
-            telegramFileId: result.telegramFileId,
-            telegramFileUniqueId: result.telegramFileUniqueId,
-            storageChatId: config.storageChatId,
-            storageMessageId: result.storageMessageId,
-            fileName,
-            mimeType: mime_type || 'application/octet-stream',
-            sizeBytes: fileSize,
-            fileType,
-            uploaderId: ctx.from.id,
-            fileHash: null,
-            archiveTelegramFileId: null,
-            archiveStorageMessageId: null,
-            archiveFileName: null,
-            archiveEntryName: null,
-            archiveMimeType: null,
-            archiveSizeBytes: null,
-            bucketId: null,
-            s3Key: null,
-            storageBackend: 'telegram',
-            isDeleted: false,
-            multipartUploadId: null,
-            partCount: null,
-          };
-
-          await fileRepo.create(uploaded);
+          await fileRepo.create(
+            buildNewFile({
+              publicId,
+              telegramFileId: result.telegramFileId,
+              telegramFileUniqueId: result.telegramFileUniqueId,
+              storageChatId: config.storageChatId,
+              storageMessageId: result.storageMessageId,
+              fileName,
+              mimeType: mime_type || 'application/octet-stream',
+              sizeBytes: fileSize,
+              fileType,
+              uploaderId: ctx.from.id,
+              storageBackend: 'telegram',
+            }),
+          );
 
           await replyWithDownloadUrl(ctx, publicId);
 

@@ -1,4 +1,5 @@
 import { nanoid } from 'nanoid';
+import { buildNewFile } from '../../domain/entities/file-factory';
 import type { MultipartUpload } from '../../domain/entities/multipart';
 import type { IBucketRepository } from '../../domain/ports/bucket-repository';
 import type { IFileRepository } from '../../domain/ports/file-repository';
@@ -270,31 +271,23 @@ export function createCompleteMultipartUploadUseCase(deps: MultipartDeps) {
 
     const publicId = nanoid();
 
-    await deps.fileRepo.create({
-      publicId,
-      telegramFileId: firstPart.telegramFileId,
-      telegramFileUniqueId: firstPart.telegramFileUniqueId,
-      storageChatId: deps.config.storageChatId,
-      storageMessageId: firstPart.storageMessageId,
-      fileName: input.key.split('/').pop() || 'file',
-      mimeType: 'application/octet-stream',
-      sizeBytes: totalSize,
-      fileType: 'document',
-      uploaderId: 0,
-      fileHash: null,
-      archiveTelegramFileId: null,
-      archiveStorageMessageId: null,
-      archiveFileName: null,
-      archiveEntryName: null,
-      archiveMimeType: null,
-      archiveSizeBytes: null,
-      bucketId: multipart.bucketId,
-      s3Key: input.key,
-      storageBackend: 'telegram',
-      isDeleted: false,
-      multipartUploadId: input.uploadId,
-      partCount: null,
-    });
+    await deps.fileRepo.create(
+      buildNewFile({
+        publicId,
+        telegramFileId: firstPart.telegramFileId,
+        telegramFileUniqueId: firstPart.telegramFileUniqueId,
+        storageChatId: deps.config.storageChatId,
+        storageMessageId: firstPart.storageMessageId,
+        fileName: input.key.split('/').pop() || 'file',
+        mimeType: 'application/octet-stream',
+        sizeBytes: totalSize,
+        fileType: 'document',
+        storageBackend: 'telegram',
+        bucketId: multipart.bucketId,
+        s3Key: input.key,
+        multipartUploadId: input.uploadId,
+      }),
+    );
 
     await deps.multipartRepo.complete(input.uploadId);
 

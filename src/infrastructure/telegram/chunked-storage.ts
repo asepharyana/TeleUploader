@@ -1,6 +1,7 @@
 import { createReadStream } from 'node:fs';
 import { nanoid } from 'nanoid';
 import type { File as FileEntity } from '../../domain/entities/file';
+import { buildNewFile } from '../../domain/entities/file-factory';
 import type { NewFilePart } from '../../domain/entities/file-part';
 import type { IFilePartRepository } from '../../domain/ports/file-part-repository';
 import type { IFileRepository } from '../../domain/ports/file-repository';
@@ -193,31 +194,25 @@ export class ChunkedStorage {
 
     const publicId = nanoid();
 
-    const file = await this.fileRepository.create({
-      publicId,
-      telegramFileId: firstPart.telegramFileId,
-      telegramFileUniqueId: firstPart.telegramFileUniqueId,
-      storageChatId: config.storageChatId,
-      storageMessageId: firstPart.storageMessageId,
-      fileName: input.fileName,
-      mimeType: input.mimeType,
-      sizeBytes: upload.totalSizeBytes,
-      fileType: input.fileType,
-      uploaderId: input.uploaderId,
-      fileHash: upload.fileHash,
-      archiveTelegramFileId: null,
-      archiveStorageMessageId: null,
-      archiveFileName: null,
-      archiveEntryName: null,
-      archiveMimeType: null,
-      archiveSizeBytes: null,
-      bucketId: input.bucketId ?? null,
-      s3Key: input.s3Key ?? null,
-      storageBackend: 'chunked',
-      isDeleted: false,
-      multipartUploadId: null,
-      partCount: upload.parts.length,
-    });
+    const file = await this.fileRepository.create(
+      buildNewFile({
+        publicId,
+        telegramFileId: firstPart.telegramFileId,
+        telegramFileUniqueId: firstPart.telegramFileUniqueId,
+        storageChatId: config.storageChatId,
+        storageMessageId: firstPart.storageMessageId,
+        fileName: input.fileName,
+        mimeType: input.mimeType,
+        sizeBytes: upload.totalSizeBytes,
+        fileType: input.fileType,
+        storageBackend: 'chunked',
+        uploaderId: input.uploaderId,
+        fileHash: upload.fileHash,
+        bucketId: input.bucketId,
+        s3Key: input.s3Key,
+        partCount: upload.parts.length,
+      }),
+    );
 
     const fileParts: NewFilePart[] = upload.parts.map((part) => ({
       fileId: file.id,

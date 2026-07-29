@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { gzipSync } from 'node:zlib';
 import { nanoid } from 'nanoid';
 import type { File } from '../../domain/entities/file';
+import { buildNewFile } from '../../domain/entities/file-factory';
 import type { NewFilePart } from '../../domain/entities/file-part';
 import type { MultipartPart } from '../../domain/entities/multipart';
 import type { IBucketRepository } from '../../domain/ports/bucket-repository';
@@ -482,31 +483,24 @@ export function createPutObjectUseCase(deps: S3ObjectDeps) {
       const fileId = randomUUID();
       const publicId = nanoid();
 
-      await deps.fileRepo.create({
-        publicId,
-        telegramFileId: firstPart.telegramFileId,
-        telegramFileUniqueId: firstPart.telegramFileUniqueId,
-        storageChatId,
-        storageMessageId: firstPart.storageMessageId,
-        fileName: finalFileName,
-        mimeType,
-        sizeBytes: chunkResult.totalSizeBytes,
-        fileType: 'document',
-        uploaderId: 0,
-        fileHash: chunkResult.fileHash,
-        archiveTelegramFileId: null,
-        archiveStorageMessageId: null,
-        archiveFileName: null,
-        archiveEntryName: null,
-        archiveMimeType: null,
-        archiveSizeBytes: null,
-        bucketId: bucket.id,
-        s3Key: key,
-        storageBackend: 'chunked',
-        isDeleted: false,
-        multipartUploadId: null,
-        partCount: chunkResult.parts.length,
-      });
+      await deps.fileRepo.create(
+        buildNewFile({
+          publicId,
+          telegramFileId: firstPart.telegramFileId,
+          telegramFileUniqueId: firstPart.telegramFileUniqueId,
+          storageChatId,
+          storageMessageId: firstPart.storageMessageId,
+          fileName: finalFileName,
+          mimeType,
+          sizeBytes: chunkResult.totalSizeBytes,
+          fileType: 'document',
+          fileHash: chunkResult.fileHash,
+          bucketId: bucket.id,
+          s3Key: key,
+          storageBackend: 'chunked',
+          partCount: chunkResult.parts.length,
+        }),
+      );
 
       const fileParts: NewFilePart[] = chunkResult.parts.map((part) => ({
         fileId,
@@ -535,31 +529,24 @@ export function createPutObjectUseCase(deps: S3ObjectDeps) {
 
     const publicId = nanoid();
 
-    await deps.fileRepo.create({
-      publicId,
-      telegramFileId: forwardResult.telegramFileId,
-      telegramFileUniqueId: forwardResult.telegramFileUniqueId,
-      storageChatId,
-      storageMessageId: forwardResult.storageMessageId,
-      fileName: finalFileName,
-      mimeType,
-      sizeBytes: body.byteLength,
-      fileType: 'document',
-      uploaderId: 0,
-      fileHash: hash,
-      archiveTelegramFileId: null,
-      archiveStorageMessageId: null,
-      archiveFileName: null,
-      archiveEntryName: null,
-      archiveMimeType: null,
-      archiveSizeBytes: null,
-      bucketId: bucket.id,
-      s3Key: key,
-      storageBackend: 'telegram',
-      isDeleted: false,
-      multipartUploadId: null,
-      partCount: null,
-    });
+    await deps.fileRepo.create(
+      buildNewFile({
+        publicId,
+        telegramFileId: forwardResult.telegramFileId,
+        telegramFileUniqueId: forwardResult.telegramFileUniqueId,
+        storageChatId,
+        storageMessageId: forwardResult.storageMessageId,
+        fileName: finalFileName,
+        mimeType,
+        sizeBytes: body.byteLength,
+        fileType: 'document',
+        fileHash: hash,
+        bucketId: bucket.id,
+        s3Key: key,
+        storageBackend: 'telegram',
+        partCount: null,
+      }),
+    );
 
     return { etag: `"${hash}"` };
   };
@@ -625,31 +612,30 @@ export function createCopyObjectUseCase(deps: S3ObjectDeps) {
 
     const publicId = nanoid();
 
-    await deps.fileRepo.create({
-      publicId,
-      telegramFileId: sourceFile.telegramFileId,
-      telegramFileUniqueId: sourceFile.telegramFileUniqueId,
-      storageChatId: sourceFile.storageChatId,
-      storageMessageId: sourceFile.storageMessageId,
-      fileName: sourceFile.fileName,
-      mimeType: sourceFile.mimeType,
-      sizeBytes: sourceFile.sizeBytes,
-      fileType: sourceFile.fileType,
-      uploaderId: 0,
-      fileHash: sourceFile.fileHash,
-      archiveTelegramFileId: sourceFile.archiveTelegramFileId,
-      archiveStorageMessageId: sourceFile.archiveStorageMessageId,
-      archiveFileName: sourceFile.archiveFileName,
-      archiveEntryName: sourceFile.archiveEntryName,
-      archiveMimeType: sourceFile.archiveMimeType,
-      archiveSizeBytes: sourceFile.archiveSizeBytes,
-      bucketId: input.destBucketId,
-      s3Key: input.destKey,
-      storageBackend: 'telegram',
-      isDeleted: false,
-      multipartUploadId: null,
-      partCount: null,
-    });
+    await deps.fileRepo.create(
+      buildNewFile({
+        publicId,
+        telegramFileId: sourceFile.telegramFileId,
+        telegramFileUniqueId: sourceFile.telegramFileUniqueId,
+        storageChatId: sourceFile.storageChatId,
+        storageMessageId: sourceFile.storageMessageId,
+        fileName: sourceFile.fileName,
+        mimeType: sourceFile.mimeType,
+        sizeBytes: sourceFile.sizeBytes,
+        fileType: sourceFile.fileType,
+        fileHash: sourceFile.fileHash,
+        archiveTelegramFileId: sourceFile.archiveTelegramFileId,
+        archiveStorageMessageId: sourceFile.archiveStorageMessageId,
+        archiveFileName: sourceFile.archiveFileName,
+        archiveEntryName: sourceFile.archiveEntryName,
+        archiveMimeType: sourceFile.archiveMimeType,
+        archiveSizeBytes: sourceFile.archiveSizeBytes,
+        bucketId: input.destBucketId,
+        s3Key: input.destKey,
+        storageBackend: 'telegram',
+        partCount: null,
+      }),
+    );
 
     return {
       etag: sourceEtag || nanoid(16),

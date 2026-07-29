@@ -1,6 +1,7 @@
 import { createReadStream } from 'node:fs';
 import { open } from 'node:fs/promises';
 import { nanoid } from 'nanoid';
+import { buildNewFile } from '../../domain/entities/file-factory';
 import type { NewFilePart } from '../../domain/entities/file-part';
 import type { IFilePartRepository } from '../../domain/ports/file-part-repository';
 import type { IFileRepository } from '../../domain/ports/file-repository';
@@ -231,31 +232,25 @@ export function createUploadFileUseCase(deps: UploadFileUseCaseDeps) {
       const fileId = nanoid();
       const publicId = nanoid();
 
-      const newFile = await deps.fileRepo.create({
-        publicId,
-        telegramFileId: firstPart.telegramFileId,
-        telegramFileUniqueId: firstPart.telegramFileUniqueId,
-        storageChatId: deps.config.storageChatId,
-        storageMessageId: firstPart.storageMessageId,
-        fileName: finalFileName,
-        mimeType,
-        sizeBytes: chunkResult.totalSizeBytes,
-        fileType,
-        uploaderId: input.uploaderId ?? 0,
-        fileHash: chunkResult.fileHash,
-        archiveTelegramFileId: null,
-        archiveStorageMessageId: null,
-        archiveFileName: null,
-        archiveEntryName: null,
-        archiveMimeType: null,
-        archiveSizeBytes: null,
-        bucketId: input.bucketId ?? null,
-        s3Key: input.s3Key ?? null,
-        storageBackend: 'chunked',
-        isDeleted: false,
-        multipartUploadId: null,
-        partCount: chunkResult.parts.length,
-      });
+      const newFile = await deps.fileRepo.create(
+        buildNewFile({
+          publicId,
+          telegramFileId: firstPart.telegramFileId,
+          telegramFileUniqueId: firstPart.telegramFileUniqueId,
+          storageChatId: deps.config.storageChatId,
+          storageMessageId: firstPart.storageMessageId,
+          fileName: finalFileName,
+          mimeType,
+          sizeBytes: chunkResult.totalSizeBytes,
+          fileType,
+          storageBackend: 'chunked',
+          uploaderId: input.uploaderId,
+          fileHash: chunkResult.fileHash,
+          bucketId: input.bucketId,
+          s3Key: input.s3Key,
+          partCount: chunkResult.parts.length,
+        }),
+      );
 
       const fileParts: NewFilePart[] = chunkResult.parts.map((part) => ({
         fileId,
@@ -292,31 +287,24 @@ export function createUploadFileUseCase(deps: UploadFileUseCaseDeps) {
 
     const singlePublicId = nanoid();
 
-    const createdFile = await deps.fileRepo.create({
-      publicId: singlePublicId,
-      telegramFileId: forwardResult.telegramFileId,
-      telegramFileUniqueId: forwardResult.telegramFileUniqueId,
-      storageChatId: deps.config.storageChatId,
-      storageMessageId: forwardResult.storageMessageId,
-      fileName: finalFileName,
-      mimeType,
-      sizeBytes: input.sizeBytes,
-      fileType,
-      uploaderId: input.uploaderId ?? 0,
-      fileHash: input.fileHash,
-      archiveTelegramFileId: null,
-      archiveStorageMessageId: null,
-      archiveFileName: null,
-      archiveEntryName: null,
-      archiveMimeType: null,
-      archiveSizeBytes: null,
-      bucketId: input.bucketId ?? null,
-      s3Key: input.s3Key ?? null,
-      storageBackend: 'telegram',
-      isDeleted: false,
-      multipartUploadId: null,
-      partCount: null,
-    });
+    const createdFile = await deps.fileRepo.create(
+      buildNewFile({
+        publicId: singlePublicId,
+        telegramFileId: forwardResult.telegramFileId,
+        telegramFileUniqueId: forwardResult.telegramFileUniqueId,
+        storageChatId: deps.config.storageChatId,
+        storageMessageId: forwardResult.storageMessageId,
+        fileName: finalFileName,
+        mimeType,
+        sizeBytes: input.sizeBytes,
+        fileType,
+        storageBackend: 'telegram',
+        uploaderId: input.uploaderId,
+        fileHash: input.fileHash,
+        bucketId: input.bucketId,
+        s3Key: input.s3Key,
+      }),
+    );
 
     return {
       publicId: createdFile.publicId,

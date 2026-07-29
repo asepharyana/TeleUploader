@@ -1,6 +1,7 @@
 import { createReadStream } from 'node:fs';
 import { nanoid } from 'nanoid';
 import type { File as FileEntity, NewFile } from '../../domain/entities/file';
+import { buildNewFile } from '../../domain/entities/file-factory';
 import type { IFileRepository } from '../../domain/ports/file-repository';
 import type { ITelegramService } from '../../domain/ports/telegram-service';
 import { config } from '../../env';
@@ -92,7 +93,7 @@ export class UploadBatcher {
       sizeBytes: number;
     },
   ): NewFile {
-    return {
+    return buildNewFile({
       publicId: nanoid(),
       telegramFileId: archive.telegramFileId,
       telegramFileUniqueId: archive.telegramFileUniqueId,
@@ -102,7 +103,7 @@ export class UploadBatcher {
       mimeType: item.mimeType || 'application/octet-stream',
       sizeBytes: item.prepared.sizeBytes,
       fileType: item.fileType,
-      uploaderId: 0,
+      storageBackend: null,
       fileHash: item.prepared.fileHash,
       archiveTelegramFileId: archive.telegramFileId,
       archiveStorageMessageId: archive.storageMessageId,
@@ -110,13 +111,7 @@ export class UploadBatcher {
       archiveEntryName: entry.entryName,
       archiveMimeType: 'application/zip',
       archiveSizeBytes: archive.sizeBytes,
-      bucketId: null,
-      s3Key: null,
-      storageBackend: null,
-      isDeleted: null,
-      multipartUploadId: null,
-      partCount: null,
-    };
+    });
   }
 
   /**

@@ -1,6 +1,7 @@
 import { createReadStream } from 'node:fs';
 import { nanoid } from 'nanoid';
 import type { File as FileEntity } from '../../../domain/entities/file';
+import { buildNewFile } from '../../../domain/entities/file-factory';
 import type { ForwardResult } from '../../../domain/ports/telegram-service';
 import { config } from '../../../env';
 import {
@@ -9,7 +10,6 @@ import {
   fileRepository,
   multipartRepository,
 } from '../../../infrastructure/di';
-import { db, files as fileSchema } from '../../../infrastructure/persistence/drizzle/index';
 import { botPool } from '../../../infrastructure/telegram/bot-pool';
 import logger from '../../../shared/logger/index';
 import { cleanupTempFile, ensureExtension, getErrorMessage } from '../../../shared/utils/file';
@@ -1070,25 +1070,24 @@ const storeFileFromTemp = async (
 
   const publicId = nanoid();
 
-  await db.insert(fileSchema).values({
-    publicId,
-    telegramFileId: forwardResult.telegramFileId,
-    telegramFileUniqueId: forwardResult.telegramFileUniqueId,
-    storageChatId: config.storageChatId,
-    storageMessageId: forwardResult.storageMessageId,
-    fileName: finalFileName,
-    mimeType,
-    sizeBytes: streamed.sizeBytes,
-    fileType: 'document',
-    uploaderId: 0,
-    fileHash: streamed.fileHash,
-    bucketId,
-    s3Key: key,
-    storageBackend: 'telegram',
-    isDeleted: false,
-    createdAt: new Date(),
-    updatedAt: new Date(),
-  });
+  await fileRepository.create(
+    buildNewFile({
+      publicId,
+      telegramFileId: forwardResult.telegramFileId,
+      telegramFileUniqueId: forwardResult.telegramFileUniqueId,
+      storageChatId: config.storageChatId,
+      storageMessageId: forwardResult.storageMessageId,
+      fileName: finalFileName,
+      mimeType,
+      sizeBytes: streamed.sizeBytes,
+      fileType: 'document',
+      uploaderId: 0,
+      fileHash: streamed.fileHash,
+      bucketId,
+      s3Key: key,
+      storageBackend: 'telegram',
+    }),
+  );
 
   await cleanupTempFile(streamed.tempPath);
 
@@ -1181,25 +1180,24 @@ const handleCopyObject = async (
 
   const publicId = nanoid();
 
-  await db.insert(fileSchema).values({
-    publicId,
-    telegramFileId: sourceFile.telegramFileId,
-    telegramFileUniqueId: sourceFile.telegramFileUniqueId,
-    storageChatId: sourceFile.storageChatId,
-    storageMessageId: sourceFile.storageMessageId,
-    fileName: sourceFile.fileName,
-    mimeType: sourceFile.mimeType,
-    sizeBytes: sourceFile.sizeBytes,
-    fileType: sourceFile.fileType,
-    uploaderId: 0,
-    fileHash: sourceFile.fileHash,
-    bucketId: destBucketId,
-    s3Key: destKey,
-    storageBackend: 'telegram',
-    isDeleted: false,
-    createdAt: new Date(),
-    updatedAt: new Date(),
-  });
+  await fileRepository.create(
+    buildNewFile({
+      publicId,
+      telegramFileId: sourceFile.telegramFileId,
+      telegramFileUniqueId: sourceFile.telegramFileUniqueId,
+      storageChatId: sourceFile.storageChatId,
+      storageMessageId: sourceFile.storageMessageId,
+      fileName: sourceFile.fileName,
+      mimeType: sourceFile.mimeType,
+      sizeBytes: sourceFile.sizeBytes,
+      fileType: sourceFile.fileType,
+      uploaderId: 0,
+      fileHash: sourceFile.fileHash,
+      bucketId: destBucketId,
+      s3Key: destKey,
+      storageBackend: 'telegram',
+    }),
+  );
 
   const xml = copyObjectResultXml(sourceFile.fileHash || nanoid(16), new Date());
   return s3Response(xml, 200, reqId, { 'content-type': 'application/xml' });
@@ -1337,13 +1335,7 @@ const handleListObjectsV1 = async (
 
   const xml = listBucketResultXml(
     bucket,
-    displayObjects.map((o) => ({
-      key: o.s3Key ?? '',
-      sizeBytes: o.sizeBytes,
-      etag: o.fileHash || nanoid(16),
-      lastModified: o.createdAt instanceof Date ? o.createdAt : new Date(),
-      mimeType: o.mimeType,
-    })),
+    displayObjects.map(mapFileToListEntry),
     commonPrefixes,
     isTruncated,
     marker,
@@ -1357,6 +1349,29 @@ const handleListObjectsV1 = async (
 
   return s3Response(xml, 200, reqId, { 'content-type': 'application/xml' });
 };
+
+/** Shape of an S3 list entry object. */
+type S3ListEntry = {
+  key: string;
+  sizeBytes: number;
+  etag: string;
+  lastModified: Date;
+  mimeType: string;
+};
+
+/**
+ * Maps a File entity to an S3 list entry object.
+ *
+ * @param file - The file entity from the repository.
+ * @returns An S3 list entry with key, size, etag, last modified, and MIME type.
+ */
+const mapFileToListEntry = (file: FileEntity): S3ListEntry => ({
+  key: file.s3Key ?? '',
+  sizeBytes: file.sizeBytes,
+  etag: file.fileHash || nanoid(16),
+  lastModified: file.createdAt instanceof Date ? file.createdAt : new Date(),
+  mimeType: file.mimeType,
+});
 
 /**
  * Handles GET /{bucket}?list-type=2 (ListObjectsV2).
@@ -1405,13 +1420,7 @@ const handleListObjectsV2 = async (
 
   const xml = listBucketV2ResultXml(
     bucket,
-    displayObjects.map((o) => ({
-      key: o.s3Key ?? '',
-      sizeBytes: o.sizeBytes,
-      etag: o.fileHash || nanoid(16),
-      lastModified: o.createdAt instanceof Date ? o.createdAt : new Date(),
-      mimeType: o.mimeType,
-    })),
+    displayObjects.map(mapFileToListEntry),
     commonPrefixes,
     isTruncated,
     maxKeys,
@@ -1668,25 +1677,24 @@ const handleCompleteMultipartUpload = async (
   // M7: Use stored content-type from the multipart record if available
   const mimeType = multipart.contentType || 'application/octet-stream';
 
-  await db.insert(fileSchema).values({
-    publicId,
-    telegramFileId: storedParts[0]!.telegramFileId,
-    telegramFileUniqueId: storedParts[0]!.telegramFileUniqueId,
-    storageChatId: config.storageChatId,
-    storageMessageId: storedParts[0]!.storageMessageId,
-    fileName: key.split('/').pop() || 'file',
-    mimeType,
-    sizeBytes: totalSize,
-    fileType: 'document',
-    uploaderId: 0,
-    bucketId: multipart.bucketId,
-    s3Key: key,
-    storageBackend: 'telegram',
-    isDeleted: false,
-    multipartUploadId: uploadId,
-    createdAt: new Date(),
-    updatedAt: new Date(),
-  });
+  await fileRepository.create(
+    buildNewFile({
+      publicId,
+      telegramFileId: storedParts[0]!.telegramFileId,
+      telegramFileUniqueId: storedParts[0]!.telegramFileUniqueId,
+      storageChatId: config.storageChatId,
+      storageMessageId: storedParts[0]!.storageMessageId,
+      fileName: key.split('/').pop() || 'file',
+      mimeType,
+      sizeBytes: totalSize,
+      fileType: 'document',
+      uploaderId: 0,
+      bucketId: multipart.bucketId,
+      s3Key: key,
+      storageBackend: 'telegram',
+      multipartUploadId: uploadId,
+    }),
+  );
 
   await multipartRepository.complete(uploadId);
 

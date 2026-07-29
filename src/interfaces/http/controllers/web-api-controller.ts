@@ -1,8 +1,8 @@
 import { createReadStream } from 'node:fs';
 import { nanoid } from 'nanoid';
+import { buildNewFile } from '../../../domain/entities/file-factory';
 import { config } from '../../../env';
 import { bucketRepository, chunkedStorage, fileRepository } from '../../../infrastructure/di';
-import { db, files as fileSchema } from '../../../infrastructure/persistence/drizzle/index';
 import { botPool } from '../../../infrastructure/telegram/bot-pool';
 import logger from '../../../shared/logger/index';
 import { cleanupTempFile, ensureExtension, getErrorMessage } from '../../../shared/utils/file';
@@ -238,25 +238,24 @@ export const handleUploadObjectV1 = async (
 
   const publicId = nanoid();
 
-  await db.insert(fileSchema).values({
-    publicId,
-    telegramFileId: forwardResult.telegramFileId,
-    telegramFileUniqueId: forwardResult.telegramFileUniqueId,
-    storageChatId: config.storageChatId,
-    storageMessageId: forwardResult.storageMessageId,
-    fileName: finalFileName,
-    mimeType,
-    sizeBytes,
-    fileType: 'document',
-    uploaderId: 0,
-    fileHash: hash,
-    bucketId: bucket.id,
-    s3Key: key,
-    storageBackend: 'telegram',
-    isDeleted: false,
-    createdAt: new Date(),
-    updatedAt: new Date(),
-  });
+  await fileRepository.create(
+    buildNewFile({
+      publicId,
+      telegramFileId: forwardResult.telegramFileId,
+      telegramFileUniqueId: forwardResult.telegramFileUniqueId,
+      storageChatId: config.storageChatId,
+      storageMessageId: forwardResult.storageMessageId,
+      fileName: finalFileName,
+      mimeType,
+      sizeBytes,
+      fileType: 'document',
+      uploaderId: 0,
+      fileHash: hash,
+      bucketId: bucket.id,
+      s3Key: key,
+      storageBackend: 'telegram',
+    }),
+  );
 
   await cleanupTempFile(tempPath);
 
@@ -352,25 +351,24 @@ export const handleCopyObjectV1 = async (req: Request, params: RouteParams): Pro
 
   const publicId = nanoid();
 
-  await db.insert(fileSchema).values({
-    publicId,
-    telegramFileId: sourceFile.telegramFileId,
-    telegramFileUniqueId: sourceFile.telegramFileUniqueId,
-    storageChatId: sourceFile.storageChatId,
-    storageMessageId: sourceFile.storageMessageId,
-    fileName: sourceFile.fileName,
-    mimeType: sourceFile.mimeType,
-    sizeBytes: sourceFile.sizeBytes,
-    fileType: sourceFile.fileType,
-    uploaderId: 0,
-    fileHash: sourceFile.fileHash,
-    bucketId: destBucket.id,
-    s3Key: body.destKey,
-    storageBackend: 'telegram',
-    isDeleted: false,
-    createdAt: new Date(),
-    updatedAt: new Date(),
-  });
+  await fileRepository.create(
+    buildNewFile({
+      publicId,
+      telegramFileId: sourceFile.telegramFileId,
+      telegramFileUniqueId: sourceFile.telegramFileUniqueId,
+      storageChatId: sourceFile.storageChatId,
+      storageMessageId: sourceFile.storageMessageId,
+      fileName: sourceFile.fileName,
+      mimeType: sourceFile.mimeType,
+      sizeBytes: Number(sourceFile.sizeBytes),
+      fileType: sourceFile.fileType,
+      uploaderId: 0,
+      fileHash: sourceFile.fileHash,
+      bucketId: destBucket.id,
+      s3Key: body.destKey,
+      storageBackend: 'telegram',
+    }),
+  );
 
   return json({ sourceKey: body.sourceKey, destKey: body.destKey, destBucket: destBucketName });
 };
