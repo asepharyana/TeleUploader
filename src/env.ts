@@ -12,7 +12,6 @@ interface AppConfig {
   rateLimitWindowMs: number;
   rateLimitMaxRequests: number;
   trustProxy: boolean;
-  uploadConcurrency: number;
   batchMaxItems: number;
   batchMaxSizeBytes: number;
   maxRequestBodyBytes: number;
@@ -105,7 +104,6 @@ export const config: AppConfig = {
   rateLimitWindowMs: parseNumber(process.env.RATE_LIMIT_WINDOW_MS, 60000),
   rateLimitMaxRequests: parseNumber(process.env.RATE_LIMIT_MAX_REQUESTS, 150),
   trustProxy: process.env.TRUST_PROXY === 'true',
-  uploadConcurrency: parseNumber(process.env.UPLOAD_CONCURRENCY, 8),
   batchMaxItems: parseNumber(process.env.BATCH_MAX_ITEMS, 20),
   batchMaxSizeBytes: parseNumber(process.env.BATCH_MAX_SIZE_BYTES, 500 * 1024 * 1024),
   maxRequestBodyBytes: parseNumber(process.env.MAX_REQUEST_BODY_BYTES, 2 * 1024 * 1024 * 1024),

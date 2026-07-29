@@ -125,7 +125,7 @@ export const uploadFileInTelegramChunks = async (input: {
 
     // Backpressure: if too many chunks are in-flight, wait for one to
     // finish before reading more — prevents unbounded memory growth.
-    if (inFlight.size >= config.uploadConcurrency * 2) {
+    if (inFlight.size >= botPool.getEffectiveConcurrency() * 2) {
       await Promise.race(inFlight);
       // Yield microtask to let .finally() run and remove from inFlight
       await new Promise((resolve) => setTimeout(resolve, 0));
