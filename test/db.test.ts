@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'bun:test';
-import { db, files } from '../src/db/index';
-import { files as schemaFiles } from '../src/db/schema';
+import { db, files } from '../src/infrastructure/persistence/drizzle/index';
+import { files as schemaFiles } from '../src/infrastructure/persistence/drizzle/schema';
 
 describe('Database Layer', () => {
   it('should export db instance', () => {

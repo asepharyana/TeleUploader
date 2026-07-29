@@ -12,50 +12,55 @@ const mockBuckets = [
 let mockObjects: Record<string, unknown>[] = [];
 let mockPrefixes: string[] = [];
 
-mock.module('../src/db/buckets', () => ({
-  listBuckets: () => Promise.resolve(mockBuckets),
-  findBucketByName: (name: string) =>
-    Promise.resolve(mockBuckets.find((b) => b.name === name) || null),
-  createBucket: (name: string) =>
-    Promise.resolve({ id: 'new-uuid', name, createdAt: new Date(), updatedAt: new Date() }),
-  deleteBucket: () => Promise.resolve(true),
-  bucketExists: () => Promise.resolve(false),
+mock.module('../src/infrastructure/persistence/repositories/bucket-repository', () => ({
+  DrizzleBucketRepository: class {
+    list = () => Promise.resolve(mockBuckets);
+    findByName = (name: string) =>
+      Promise.resolve(mockBuckets.find((b) => b.name === name) || null);
+    create = (name: string) =>
+      Promise.resolve({ id: 'new-uuid', name, createdAt: new Date(), updatedAt: new Date() });
+    delete = () => Promise.resolve(true);
+  },
 }));
 
-mock.module('../src/db/files-ext', () => ({
-  findFileByBucketAndKey: () => Promise.resolve(null),
-  listObjectsByPrefix: () => Promise.resolve({ objects: mockObjects, prefixes: mockPrefixes }),
-  softDeleteFile: () => Promise.resolve(true),
-  softDeleteFilesBatch: () => Promise.resolve(0),
-  countBucketObjects: () => Promise.resolve(0),
-  findOrphanFilesByBucket: () => Promise.resolve([]),
+mock.module('../src/infrastructure/persistence/repositories/file-repository', () => ({
+  DrizzleFileRepository: class {
+    findByBucketAndKey = () => Promise.resolve(null);
+    listByPrefix = () => Promise.resolve({ objects: mockObjects, prefixes: mockPrefixes });
+    softDelete = () => Promise.resolve(true);
+    softDeleteBatch = () => Promise.resolve(0);
+    countByBucket = () => Promise.resolve(0);
+    findByBucket = () => Promise.resolve([]);
+  },
 }));
 
-mock.module('../src/utils/telegram', () => ({
-  forwardToStorage: () =>
-    Promise.resolve({
-      telegramFileId: 'mock-tg-id',
-      telegramFileUniqueId: 'mock-tg-unique',
-      storageMessageId: 12345,
-    }),
-  getFileInfo: () =>
-    Promise.resolve({
-      file_size: 100,
-      mime_type: 'text/plain',
-      file_path: 'documents/file.txt',
-      bot_token: '123456:ABC-DEF',
-    }),
+mock.module('../src/infrastructure/telegram/bot-pool', () => ({
+  botPool: {
+    forwardToStorage: () =>
+      Promise.resolve({
+        telegramFileId: 'mock-tg-id',
+        telegramFileUniqueId: 'mock-tg-unique',
+        storageMessageId: 12345,
+      }),
+    getFileInfo: () =>
+      Promise.resolve({
+        file_size: 100,
+        mime_type: 'text/plain',
+        file_path: 'documents/file.txt',
+        bot_token: '123456:ABC-DEF',
+      }),
+  },
 }));
 
 describe('Web API v1', () => {
-  let handleWebApiV1: typeof import('../src/routes/web-api').handleWebApiV1;
+  let handleWebApiV1: typeof import('../src/interfaces/http/controllers/web-api-controller').handleWebApiV1;
 
   beforeAll(async () => {
     process.env.BOT_TOKEN = '123456:ABC-DEF';
     process.env.STORAGE_CHANNEL_ID = '-1001234567890';
     process.env.BASE_URL = 'http://localhost:3000';
     process.env.DATABASE_URL = 'postgresql://localhost/test';
-    const webApi = await import('../src/routes/web-api');
+    const webApi = await import('../src/interfaces/http/controllers/web-api-controller');
     handleWebApiV1 = webApi.handleWebApiV1;
   });
 

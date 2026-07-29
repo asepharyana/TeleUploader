@@ -1,6 +1,10 @@
 import { beforeEach, describe, expect, it } from 'bun:test';
 import { config } from '../src/env';
-import { checkRateLimit, cleanupRateLimitCache, clearRateLimitCache } from '../src/utils/rateLimit';
+import {
+  checkRateLimit,
+  cleanupRateLimitCache,
+  clearRateLimitCache,
+} from '../src/interfaces/http/middleware/rate-limit';
 
 describe('Rate Limiter', () => {
   beforeEach(() => {

@@ -17,7 +17,7 @@ setEnv('ADMIN_API_TOKEN', 'route-secret-token');
 setEnv('SESSION_COOKIE_NAME', 'route_session');
 setEnv('SESSION_COOKIE_MAX_AGE_SECONDS', '3600');
 
-const { createSessionCookie } = await import('../src/utils/auth');
+const { createSessionCookie } = await import('../src/interfaces/http/middleware/auth');
 const { handleLogin, handleLogout, handleMe } = await import(
   '../src/interfaces/http/controllers/auth-controller'
 );

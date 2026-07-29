@@ -2,7 +2,7 @@ import { describe, expect, it } from 'bun:test';
 
 describe('S3 XML Builders', () => {
   it('builds ListBuckets XML', async () => {
-    const xml = await import('../src/utils/s3/xml');
+    const xml = await import('../src/interfaces/s3/xml');
     const result = xml.listBucketsXml(
       [{ name: 'test-bucket', createdAt: new Date('2026-01-01T00:00:00Z') }],
       'req-1',
@@ -14,7 +14,7 @@ describe('S3 XML Builders', () => {
   });
 
   it('builds escaped ListBucketResult XML', async () => {
-    const xml = await import('../src/utils/s3/xml');
+    const xml = await import('../src/interfaces/s3/xml');
     const result = xml.listBucketResultXml(
       'my-bucket',
       [
@@ -42,7 +42,7 @@ describe('S3 XML Builders', () => {
   });
 
   it('builds ListBucketV2 XML', async () => {
-    const xml = await import('../src/utils/s3/xml');
+    const xml = await import('../src/interfaces/s3/xml');
     const result = xml.listBucketV2ResultXml(
       'my-bucket',
       [
@@ -70,7 +70,7 @@ describe('S3 XML Builders', () => {
   });
 
   it('builds multipart and copy XML responses', async () => {
-    const xml = await import('../src/utils/s3/xml');
+    const xml = await import('../src/interfaces/s3/xml');
     expect(xml.initiateMultipartUploadXml('bucket', 'key', 'upload-123')).toContain(
       '<UploadId>upload-123</UploadId>',
     );
@@ -83,7 +83,7 @@ describe('S3 XML Builders', () => {
   });
 
   it('builds error XML and error Response', async () => {
-    const xml = await import('../src/utils/s3/xml');
+    const xml = await import('../src/interfaces/s3/xml');
     const result = xml.s3ErrorXml(
       'NoSuchBucket',
       'The specified bucket does not exist',
@@ -99,7 +99,7 @@ describe('S3 XML Builders', () => {
   });
 
   it('parses DeleteObjects body', async () => {
-    const xml = await import('../src/utils/s3/xml');
+    const xml = await import('../src/interfaces/s3/xml');
     const body =
       '<Delete><Object><Key>file1.txt</Key></Object><Object><Key>file2.txt</Key></Object><Quiet>true</Quiet></Delete>';
     const { keys, quiet } = xml.parseDeleteObjectsBody(body);
@@ -108,7 +108,7 @@ describe('S3 XML Builders', () => {
   });
 
   it('parses CompleteMultipartUpload body', async () => {
-    const xml = await import('../src/utils/s3/xml');
+    const xml = await import('../src/interfaces/s3/xml');
     const body =
       '<CompleteMultipartUpload><Part><PartNumber>1</PartNumber><ETag>"abc"</ETag></Part><Part><PartNumber>2</PartNumber><ETag>"def"</ETag></Part></CompleteMultipartUpload>';
     const parts = xml.parseCompleteMultipartBody(body);

@@ -1,6 +1,6 @@
 import { afterAll, beforeEach, describe, expect, it, mock, spyOn } from 'bun:test';
+import logger from '../src/shared/logger/index';
 import type { TelegramMediaMessage } from '../src/shared/utils/file';
-import logger from '../src/utils/logger';
 
 // Mock environment
 process.env.BOT_TOKEN = process.env.BOT_TOKEN || '123456789:ABCdefGhIJKlmNoPQRsTUVwxyZ';

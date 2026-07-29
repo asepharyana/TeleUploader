@@ -50,7 +50,6 @@ const isTransientError = (error: unknown): boolean => {
 const MAX_TRANSIENT_RETRIES = 3;
 const MAX_OUTER_RETRIES = 10;
 const TELEGRAM_API_TIMEOUT_MS = 120_000;
-const PER_BOT_CONCURRENCY = 1;
 
 interface BotEntry {
   index: number;
@@ -69,7 +68,7 @@ export class BotPool implements ITelegramService {
       index,
       token,
       instance: new Telegraf(token),
-      queue: new PQueue({ concurrency: PER_BOT_CONCURRENCY }),
+      queue: new PQueue({ concurrency: config.telegramBotConcurrency }),
       rateLimitedUntil: 0,
     }));
   }
@@ -256,7 +255,7 @@ export class BotPool implements ITelegramService {
 
   /** Get total effective concurrency across all bots */
   getEffectiveConcurrency(): number {
-    return this.bots.length * PER_BOT_CONCURRENCY;
+    return this.bots.length * config.telegramBotConcurrency;
   }
 
   async getFileInfo(telegramFileId: string): Promise<TelegramFileInfo> {

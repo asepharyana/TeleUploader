@@ -19,7 +19,6 @@ import { DrizzleFileRepository } from './persistence/repositories/file-repositor
 import { DrizzleMultipartRepository } from './persistence/repositories/multipart-repository';
 import { botPool } from './telegram/bot-pool';
 import { ChunkedStorage } from './telegram/chunked-storage';
-import { UploadBatcher } from './telegram/upload-batcher';
 
 // ─── Repository Singletons ──────────────────────────────────────────
 
@@ -46,6 +45,3 @@ export const chunkedStorage = new ChunkedStorage(
   filePartRepository,
   telegramService,
 );
-
-/** Singleton UploadBatcher for batched small-file uploads. */
-export const uploadBatcher = new UploadBatcher(fileRepository, telegramService);

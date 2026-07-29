@@ -1,7 +1,7 @@
 import { nanoid } from 'nanoid';
+import { buildNewFile } from '../../../domain/entities/file-factory';
 import { config } from '../../../env';
-import { chunkedStorage, fileRepository, uploadBatcher } from '../../../infrastructure/di';
-import type { PreparedUpload } from '../../../infrastructure/telegram/upload-batcher';
+import { chunkedStorage, fileRepository, telegramService } from '../../../infrastructure/di';
 import logger from '../../../shared/logger/index';
 import { metricsCollector } from '../../../shared/metrics/index';
 import {
@@ -15,6 +15,14 @@ import {
   getFileType,
 } from '../../../shared/utils/file';
 import { streamToTemp } from '../../../shared/utils/temp-stream';
+
+/** Prepared upload metadata before submission to storage. */
+interface PreparedUpload {
+  tempPath: string;
+  fileHash: string;
+  sizeBytes: number;
+  signatureBuffer: Buffer;
+}
 
 /**
  * Maximum allowed size (in bytes) for a base64 JSON upload.
@@ -196,14 +204,35 @@ const handleMultipartUpload = async (req: Request): Promise<Response> => {
       return Response.json(buildUploadResponse(uploadedFile, config.baseUrl), { status: 200 });
     }
 
-    const uploaded = await uploadBatcher.enqueuePreparedUpload({
-      prepared,
-      fileName: finalFileName,
-      mimeType,
+    // Single-message — direct to Telegram storage
+    const forwardResult = await telegramService.forwardToStorage(
+      Bun.file(prepared.tempPath).stream(),
+      finalFileName,
       fileType,
-    });
+    );
 
-    return Response.json(buildUploadResponse(uploaded, config.baseUrl), { status: 200 });
+    const publicId = nanoid();
+
+    const createdFile = await fileRepository.create(
+      buildNewFile({
+        publicId,
+        telegramFileId: forwardResult.telegramFileId,
+        telegramFileUniqueId: forwardResult.telegramFileUniqueId,
+        storageChatId: config.storageChatId,
+        storageMessageId: forwardResult.storageMessageId,
+        fileName: finalFileName,
+        mimeType,
+        sizeBytes: prepared.sizeBytes,
+        fileType,
+        storageBackend: 'telegram',
+        uploaderId: 0,
+        fileHash: prepared.fileHash,
+      }),
+    );
+
+    await cleanupTempFile(prepared.tempPath);
+
+    return Response.json(buildUploadResponse(createdFile, config.baseUrl), { status: 200 });
   } catch (error: unknown) {
     const message = getErrorMessage(error);
     logger.error('Multipart upload error', { error: message });
@@ -287,14 +316,35 @@ const handleJSONUpload = async (req: Request): Promise<Response> => {
       return Response.json(buildUploadResponse(uploadedFile, config.baseUrl), { status: 200 });
     }
 
-    const uploaded = await uploadBatcher.enqueuePreparedUpload({
-      prepared,
-      fileName: finalFileName,
-      mimeType,
+    // Single-message — direct to Telegram storage
+    const forwardResult = await telegramService.forwardToStorage(
+      Bun.file(prepared.tempPath).stream(),
+      finalFileName,
       fileType,
-    });
+    );
 
-    return Response.json(buildUploadResponse(uploaded, config.baseUrl), { status: 200 });
+    const publicId = nanoid();
+
+    const createdFile = await fileRepository.create(
+      buildNewFile({
+        publicId,
+        telegramFileId: forwardResult.telegramFileId,
+        telegramFileUniqueId: forwardResult.telegramFileUniqueId,
+        storageChatId: config.storageChatId,
+        storageMessageId: forwardResult.storageMessageId,
+        fileName: finalFileName,
+        mimeType,
+        sizeBytes: prepared.sizeBytes,
+        fileType,
+        storageBackend: 'telegram',
+        uploaderId: 0,
+        fileHash: prepared.fileHash,
+      }),
+    );
+
+    await cleanupTempFile(prepared.tempPath);
+
+    return Response.json(buildUploadResponse(createdFile, config.baseUrl), { status: 200 });
   } catch (error: unknown) {
     const message = getErrorMessage(error);
     logger.error('JSON upload error', { error: message });

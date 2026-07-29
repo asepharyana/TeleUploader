@@ -5,7 +5,7 @@ import {
   extractFileName,
   extractMimeType,
   getFileType,
-} from '../src/utils/file';
+} from '../src/shared/utils/file';
 
 describe('File Utilities', () => {
   describe('getFileType', () => {

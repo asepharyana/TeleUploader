@@ -1,7 +1,7 @@
 import { afterEach, beforeAll, beforeEach, describe, expect, it, mock, spyOn } from 'bun:test';
 import type { ITelegramService } from '../src/domain/ports/telegram-service';
 import { config } from '../src/env';
-import logger from '../src/utils/logger';
+import logger from '../src/shared/logger/index';
 
 let realPhotoBuffer: Buffer;
 

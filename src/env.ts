@@ -3,6 +3,8 @@ import logger from './shared/logger/index';
 interface AppConfig {
   /** All bot tokens merged from BOT_TOKENS (or BOT_TOKEN + ADDITIONAL_BOT_TOKENS fallback) */
   botTokens: string[];
+  /** Per-bot concurrency for Telegram API calls (default 1). */
+  telegramBotConcurrency: number;
   storageChatId: number;
   baseUrl: string;
   databaseUrl: string;
@@ -107,6 +109,7 @@ const maskDatabaseUrl = (value: string): string =>
 
 export const config: AppConfig = {
   botTokens: parseTokens(botTokensRaw),
+  telegramBotConcurrency: parseNumber(process.env.TELEGRAM_BOT_CONCURRENCY, 1),
   storageChatId: parseInt(process.env.STORAGE_CHANNEL_ID!, 10),
   baseUrl: process.env.BASE_URL!,
   databaseUrl: process.env.DATABASE_URL!,

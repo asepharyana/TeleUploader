@@ -16,55 +16,66 @@ const bucket = {
   updatedAt: new Date('2026-01-01T00:00:00Z'),
 };
 
-mock.module('../src/db/buckets', () => ({
-  createBucket: () => Promise.resolve(bucket),
-  deleteBucket: () => Promise.resolve(true),
-  findBucketByName: (name: string) => Promise.resolve(name === bucket.name ? bucket : null),
-  listBuckets: () => Promise.resolve([bucket]),
+mock.module('../src/infrastructure/persistence/repositories/bucket-repository', () => ({
+  DrizzleBucketRepository: class {
+    create = () => Promise.resolve(bucket);
+    findByName = (name: string) => Promise.resolve(name === bucket.name ? bucket : null);
+    list = () => Promise.resolve([bucket]);
+    delete = () => Promise.resolve(true);
+  },
 }));
 
-mock.module('../src/db/files-ext', () => ({
-  countBucketObjects: () => Promise.resolve(0),
-  findFileByBucketAndKey: () => Promise.resolve(null),
-  listObjectsByPrefix: () => Promise.resolve({ objects: [], prefixes: [] }),
-  softDeleteFile: () => Promise.resolve(true),
+mock.module('../src/infrastructure/persistence/repositories/file-repository', () => ({
+  DrizzleFileRepository: class {
+    countByBucket = () => Promise.resolve(0);
+    findByBucketAndKey = () => Promise.resolve(null);
+    listByPrefix = () => Promise.resolve({ objects: [], prefixes: [] });
+    softDelete = () => Promise.resolve(true);
+  },
 }));
 
-mock.module('../src/db/multipart', () => ({
-  abortMultipartUpload: () => Promise.resolve(),
-  completeMultipartUpload: () => Promise.resolve(),
-  createMultipartUpload: () => Promise.resolve('upload-id'),
-  findMultipartUpload: () => Promise.resolve(null),
-  insertMultipartPart: () => Promise.resolve(),
-  listMultipartParts: () => Promise.resolve([]),
-  listMultipartUploadsByBucket: () =>
-    Promise.resolve({ uploads: [], isTruncated: false, nextKeyMarker: null }),
+mock.module('../src/infrastructure/persistence/repositories/multipart-repository', () => ({
+  DrizzleMultipartRepository: class {
+    abort = () => Promise.resolve();
+    complete = () => Promise.resolve();
+    create = () => Promise.resolve('upload-id');
+    findById = () => Promise.resolve(null);
+    insertPart = () => Promise.resolve();
+    listParts = () => Promise.resolve([]);
+    listByBucket = () => Promise.resolve({ uploads: [], isTruncated: false, nextKeyMarker: null });
+  },
 }));
 
-mock.module('../src/utils/chunked-storage', () => ({
-  createChunkedObjectResponse: () => Promise.resolve(new Response('')),
-  storeFileInTelegramChunks: () => Promise.resolve({ fileHash: 'hash' }),
+mock.module('../src/infrastructure/telegram/chunked-storage', () => ({
+  ChunkedStorage: class {
+    createChunkedObjectResponse = () => Promise.resolve(new Response(''));
+    storeFileInTelegramChunks = () => Promise.resolve({ fileHash: 'hash' });
+  },
 }));
 
-mock.module('../src/utils/s3/auth', () => ({
+mock.module('../src/interfaces/s3/auth', () => ({
   verifyPresignedUrl: () => Promise.resolve({ isValid: true }),
   verifySignature: () => Promise.resolve({ isValid: true }),
+  verifyBodyHash: () => null,
+  isS3Request: () => true,
 }));
 
-mock.module('../src/utils/telegram', () => ({
-  forwardToStorage: () =>
-    Promise.resolve({
-      telegramFileId: 'mock-tg-id',
-      telegramFileUniqueId: 'mock-tg-unique',
-      storageMessageId: 12345,
-    }),
-  getFileInfo: () =>
-    Promise.resolve({
-      bot_token: '123456:ABC-DEF',
-      file_path: 'documents/file.txt',
-      file_size: 100,
-      mime_type: 'text/plain',
-    }),
+mock.module('../src/infrastructure/telegram/bot-pool', () => ({
+  botPool: {
+    forwardToStorage: () =>
+      Promise.resolve({
+        telegramFileId: 'mock-tg-id',
+        telegramFileUniqueId: 'mock-tg-unique',
+        storageMessageId: 12345,
+      }),
+    getFileInfo: () =>
+      Promise.resolve({
+        bot_token: '123456:ABC-DEF',
+        file_path: 'documents/file.txt',
+        file_size: 100,
+        mime_type: 'text/plain',
+      }),
+  },
 }));
 
 describe('S3 bucket configuration compatibility', () => {

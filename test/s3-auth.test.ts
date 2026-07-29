@@ -1,12 +1,12 @@
 import { beforeAll, describe, expect, it } from 'bun:test';
 
 describe('S3 Auth (SigV4)', () => {
-  let verifySignature: typeof import('../src/utils/s3/auth').verifySignature;
-  let verifyPresignedUrl: typeof import('../src/utils/s3/auth').verifyPresignedUrl;
-  let isS3Request: typeof import('../src/utils/s3/auth').isS3Request;
+  let verifySignature: typeof import('../src/interfaces/s3/auth').verifySignature;
+  let verifyPresignedUrl: typeof import('../src/interfaces/s3/auth').verifyPresignedUrl;
+  let isS3Request: typeof import('../src/interfaces/s3/auth').isS3Request;
 
   beforeAll(async () => {
-    const auth = await import('../src/utils/s3/auth');
+    const auth = await import('../src/interfaces/s3/auth');
     verifySignature = auth.verifySignature;
     verifyPresignedUrl = auth.verifyPresignedUrl;
     isS3Request = auth.isS3Request;
