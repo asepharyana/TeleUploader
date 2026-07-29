@@ -21,7 +21,7 @@ describe('File Utilities', () => {
 
     it('should classify image mime types based on caption', () => {
       expect(getFileType('image/jpeg', 'my photo')).toBe('photo');
-      expect(getFileType('image/png', 'cool image.png')).toBe('photo');
+      expect(getFileType('image/png', 'cool image.png')).toBe('document');
       expect(getFileType('image/gif', 'funny.gif')).toBe('animation');
       expect(getFileType('image/png', 'funny gif')).toBe('animation');
     });

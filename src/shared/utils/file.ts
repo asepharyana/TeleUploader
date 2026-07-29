@@ -85,7 +85,12 @@ export const getFileType = (mime: string | null, caption?: string): string => {
   if (mimeUpper === 'video') return 'video';
   if (mimeUpper === 'audio') return 'audio';
   if (mimeUpper === 'document') return 'document';
-  if (mimeUpper === 'image') return captionLower?.includes('gif') ? 'animation' : 'photo';
+  // ── Photo (JPEG only; Telegram Bot API rejects non-JPEG for sendPhoto) ──
+  if (mimeUpper === 'image') {
+    if (captionLower?.includes('gif')) return 'animation';
+    if (mime?.toLowerCase() === 'image/jpeg' || mime?.toLowerCase() === 'image/jpg') return 'photo';
+    return 'document';
+  }
   if (captionLower?.includes('voice')) return 'voice';
   if (captionLower?.includes('animation')) return 'animation';
 
