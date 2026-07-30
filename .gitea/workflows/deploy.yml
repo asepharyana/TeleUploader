@@ -19,18 +19,17 @@ jobs:
         run: |
           set -eu
 
-          # Install Nix (container-safe: no systemd, root-only mode)
+          # Install Nix (container-safe: --init none, root-only mode)
           curl -fsSL https://install.determinate.systems/nix \
             | sh -s -- install linux --no-confirm --init none 2>&1
 
-          # Enable flakes for Nix build
+          # Enable flakes
           mkdir -p /etc/nix
           echo "experimental-features = nix-command flakes" >> /etc/nix/nix.conf
 
-          # Source Nix profile
           . /nix/var/nix/profiles/default/etc/profile.d/nix-daemon.sh
 
-          # Build (prefer binary cache — no sandbox in container)
+          # Build
           nix build .#teleuploader --impure --option sandbox false 2>&1
 
           echo "$(readlink result)" > /tmp/teleuploader-store-path
@@ -56,10 +55,18 @@ jobs:
           export NIX_SSHOPTS="-i $key_file -o StrictHostKeyChecking=no"
           nix copy --to "ssh://${VPS_USER}@${VPS_HOST}" "$STORE_PATH" 2>&1
 
-          # Deploy: set profile + restart service
+          # Deploy: update profile + restart service
+          NIX_BIN="/nix/var/nix/profiles/default/bin"
           ssh -i "$key_file" -o StrictHostKeyChecking=no \
             "${VPS_USER}@${VPS_HOST}" "
+            # Remove stale profile dir (if was created as mkdir -p)
+            if [ -d /nix/var/nix/profiles/teleuploader ] && [ ! -L /nix/var/nix/profiles/teleuploader ]; then
+              rm -rf /nix/var/nix/profiles/teleuploader
+            fi
+
+            export PATH=\$PATH:$NIX_BIN
             nix-env --profile /nix/var/nix/profiles/teleuploader --set $STORE_PATH
+            systemctl daemon-reload
             systemctl restart teleuploader
             sleep 3
             systemctl status teleuploader --no-pager 2>&1 | head -15
