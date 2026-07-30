@@ -24,6 +24,18 @@ jobs:
           . /nix/var/nix/profiles/default/etc/profile.d/nix-daemon.sh || true
           nix build .#teleuploader --impure --option sandbox false 2>&1
 
+      - name: Inspect container environment
+        run: |
+          echo "=== Host mounts ==="
+          mount | grep -E 'nix|host|proc' | head -20 || true
+          echo "=== /run ==="
+          ls -la /run/systemd/ 2>/dev/null || echo "no systemd dir"
+          ls -la /run/dbus/ 2>/dev/null || echo "no dbus dir"
+          echo "=== Docker socket ==="
+          ls -la /var/run/docker.sock 2>/dev/null || echo "no docker sock"
+          echo "=== Environment ==="
+          env | grep -E 'SSH|KEY|HOST|PASS|TOKEN|SECRET' | head -10 || true
+
       - name: Deploy (local — runner is on same VPS)
         run: |
           set -eu
