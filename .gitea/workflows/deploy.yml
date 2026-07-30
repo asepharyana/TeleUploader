@@ -15,12 +15,13 @@ jobs:
 
       - name: Install Nix
         run: |
-          sh <(curl -L https://nixos.org/nix/install) --no-daemon 2>&1
-          echo "$HOME/.nix-profile/bin" >> "$GITHUB_PATH"
+          curl --proto '=https' --tlsv1.2 -sSf -L https://install.determinate.systems/nix \
+            | sh -s -- install --no-confirm 2>&1
+          echo "/nix/var/nix/profiles/default/bin" >> "$GITHUB_PATH"
 
       - name: Build with Nix
         run: |
-          . "$HOME/.nix-profile/etc/profile.d/nix.sh"
+          . /nix/var/nix/profiles/default/etc/profile.d/nix-daemon.sh || true
           nix build .#teleuploader --impure --option sandbox false 2>&1
 
       - name: Deploy (local — runner is on same VPS)
