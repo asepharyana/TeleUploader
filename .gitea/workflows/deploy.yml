@@ -15,16 +15,22 @@ jobs:
           git clone https://git.imrnes.team/MythEclipse/TeleUploader.git .
           git checkout ${{ github.sha }}
 
-      - name: Build with Nix
+      - name: Install Nix & Build
         run: |
           set -eu
 
-          # Install Nix via DeterminateSystems
+          # Install Nix (container-safe: no systemd, root-only mode)
           curl -fsSL https://install.determinate.systems/nix \
-            | sh -s -- install --no-confirm 2>&1
+            | sh -s -- install linux --no-confirm --init none 2>&1
 
+          # Enable flakes for Nix build
+          mkdir -p /etc/nix
+          echo "experimental-features = nix-command flakes" >> /etc/nix/nix.conf
+
+          # Source Nix profile
           . /nix/var/nix/profiles/default/etc/profile.d/nix-daemon.sh
 
+          # Build (prefer binary cache — no sandbox in container)
           nix build .#teleuploader --impure --option sandbox false 2>&1
 
           echo "$(readlink result)" > /tmp/teleuploader-store-path
