@@ -13,33 +13,43 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@v4
 
-      - name: Install Nix
-        run: |
-          curl --proto '=https' --tlsv1.2 -sSf -L https://install.determinate.systems/nix \
-            | sh -s -- install --no-confirm 2>&1
-          echo "/nix/var/nix/profiles/default/bin" >> "$GITHUB_PATH"
-
-      - name: Build with Nix
-        run: |
-          . /nix/var/nix/profiles/default/etc/profile.d/nix-daemon.sh || true
-          nix build .#teleuploader --impure --option sandbox false 2>&1
-
-      - name: Deploy via Docker socket (host access)
+      - name: Deploy via SSH (build + deploy on VPS)
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USER: ${{ secrets.VPS_USER }}
+          VPS_SSH_KEY_VALUE: ${{ secrets.VPS_SSH_KEY_VALUE }}
         run: |
           set -eu
-          STORE_PATH=$(readlink result)
+          key_file=$(mktemp)
+          printf '%s\n' "$VPS_SSH_KEY_VALUE" > "$key_file"
+          chmod 600 "$key_file"
 
-          # Use Docker socket to run commands on the VPS host
-          docker run --rm --pid=host --privileged \
-            -v /:/host \
-            alpine:latest \
-            chroot /host sh -c "
-              nix-env --profile /nix/var/nix/profiles/teleuploader --set '$STORE_PATH' && \
-              systemctl restart teleuploader
+          ssh -i "$key_file" -o StrictHostKeyChecking=no \
+            "${VPS_USER}@${VPS_HOST}" \
             "
 
-          echo "=== Service status ==="
-          docker run --rm --pid=host --privileged \
-            -v /:/host \
-            alpine:latest \
-            chroot /host sh -c "systemctl status teleuploader --no-pager | head -15"
+            # Source Nix profile (Determinate Nix installs to ~/.nix-profile)
+            export PATH=\"\$HOME/.nix-profile/bin:\$PATH\"
+
+            # Clone or pull latest code
+            REPO_DIR=\"/home/teleuploader/repo\"
+            if [ -d \"\$REPO_DIR/.git\" ]; then
+              cd \"\$REPO_DIR\" && git pull origin main 2>&1
+            else
+              mkdir -p \"\$REPO_DIR\"
+              git clone https://git.imrnes.team/MythEclipse/TeleUploader \"\$REPO_DIR\" 2>&1
+              cd \"\$REPO_DIR\"
+            fi
+
+            cd \"\$REPO_DIR\"
+
+            # Build with Nix
+            nix build .#teleuploader --impure --option sandbox false 2>&1
+
+            # Deploy
+            STORE_PATH=\$(readlink result)
+            nix-env --profile /nix/var/nix/profiles/teleuploader --set \"\$STORE_PATH\"
+            systemctl restart teleuploader
+            sleep 3
+            systemctl status teleuploader --no-pager | head -15
+            "
