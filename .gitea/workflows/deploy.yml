@@ -13,52 +13,36 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@v4
 
-      - name: Build with Nix
-        run: |
-          set -eu
-
-          # Install Nix via DeterminateSystems (CI container doesn't have Nix)
-          curl -fsSL https://install.determinate.systems/nix \
-            | sh -s -- install --no-confirm 2>&1
-
-          # Source Nix profile
-          . /nix/var/nix/profiles/default/etc/profile.d/nix-daemon.sh
-
-          # Build
-          nix build .#teleuploader --impure --option sandbox false 2>&1
-
-          # Save store path for next step
-          STORE_PATH=$(readlink result)
-          echo "$STORE_PATH" > /tmp/teleuploader-store-path
-
-      - name: Copy binary to target VPS & deploy
+      - name: Deploy via SSH (build + deploy on VPS)
         env:
           VPS_HOST: ${{ secrets.VPS_HOST }}
           VPS_USER: ${{ secrets.VPS_USER }}
           VPS_SSH_KEY_VALUE: ${{ secrets.VPS_SSH_KEY_VALUE }}
         run: |
           set -eu
-
-          # Source Nix profile
-          . /nix/var/nix/profiles/default/etc/profile.d/nix-daemon.sh
-
-          STORE_PATH=$(cat /tmp/teleuploader-store-path)
-          echo "=== Store path: $STORE_PATH"
-
-          # Write SSH key
-          key_file=$(mktemp /tmp/deploy-key.XXXXXX)
+          key_file=$(mktemp)
           printf '%s\n' "$VPS_SSH_KEY_VALUE" > "$key_file"
           chmod 600 "$key_file"
 
-          # Copy binary closure to target VPS via Nix SSH store
-          export NIX_SSHOPTS="-i $key_file -o StrictHostKeyChecking=no"
-          nix copy --to "ssh://${VPS_USER}@${VPS_HOST}" "$STORE_PATH" 2>&1
-
-          # Deploy: set profile + restart service
           ssh -i "$key_file" -o StrictHostKeyChecking=no \
             "${VPS_USER}@${VPS_HOST}" "
-            nix-env --profile /nix/var/nix/profiles/teleuploader --set $STORE_PATH
+            export PATH=\"\$HOME/.nix-profile/bin:/nix/var/nix/profiles/default/bin:\$PATH\"
+
+            REPO_DIR=\"/home/teleuploader/repo\"
+            if [ -d \"\$REPO_DIR/.git\" ]; then
+              cd \"\$REPO_DIR\" && git pull origin main 2>&1
+            else
+              mkdir -p \"\$REPO_DIR\"
+              git clone https://git.imrnes.team/MythEclipse/TeleUploader \"\$REPO_DIR\" 2>&1
+              cd \"\$REPO_DIR\"
+            fi
+
+            cd \"\$REPO_DIR\"
+            nix build .#teleuploader --impure --option sandbox false 2>&1
+
+            STORE_PATH=\$(readlink result)
+            nix-env --profile /nix/var/nix/profiles/teleuploader --set \"\$STORE_PATH\"
             systemctl restart teleuploader
             sleep 3
             systemctl status teleuploader --no-pager 2>&1 | head -15
-          " 2>&1
+          "
