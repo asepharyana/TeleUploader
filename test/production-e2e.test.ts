@@ -554,7 +554,7 @@ describe('1 GB large-file upload', () => {
     const r = await s3Request('PUT', `/${largeBucket}`);
     expect(r.status).toBe(200);
     createdBuckets.push(largeBucket);
-  });
+  }, 600_000);
 
   if (skipLarge) {
     it('1 GB tests skipped — set S3_SECRET_KEY and ADMIN_API_TOKEN', () => {
