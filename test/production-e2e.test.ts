@@ -13,8 +13,10 @@
  * Usage:
  *   S3_SECRET_KEY=xxx ADMIN_API_TOKEN=xxx bun test test/production-e2e.test.ts
  *
- * Large-file tests need a 1 GB test file; download it automatically from
- *   https://ash-speed.hetzner.com/1GB.bin  into /tmp/kilo/1GB.bin
+ * Large-file tests (1 GB) are opt-in — they download a 1 GB fixture and
+ * upload it to the live deployment:
+ *   RUN_LARGE_E2E=1 S3_SECRET_KEY=xxx ADMIN_API_TOKEN=xxx bun test test/production-e2e.test.ts
+ *   (downloads https://ash-speed.hetzner.com/1GB.bin into /tmp/kilo/1GB.bin)
  */
 
 import { afterAll, beforeAll, describe, expect, it } from 'bun:test';
@@ -156,6 +158,24 @@ async function ensureLargeFile(): Promise<boolean> {
   }
   return false;
 }
+
+/**
+ * Probes the 1 GB fixture source with a tiny Range request so the suite
+ * fails fast (and skips) when the download host is unreachable — without
+ * it, every full e2e run burns the whole beforeAll timeout hanging on the
+ * download.
+ */
+const LARGE_SOURCE_OK = await (async (): Promise<boolean> => {
+  try {
+    const probe = await fetch(LARGE_FILE_URL, {
+      headers: { Range: 'bytes=0-0' },
+      signal: AbortSignal.timeout(8_000),
+    });
+    return probe.ok || probe.status === 206 || probe.status === 416;
+  } catch {
+    return false;
+  }
+})();
 
 // ── Shared cleanup ───────────────────────────────────────────────────────────
 afterAll(async () => {
@@ -531,7 +551,11 @@ describe('S3 API (production, SigV4)', () => {
 // ═══════════════════════════════════════════════════════════════════════════════
 
 describe('1 GB large-file upload', () => {
-  const skipLarge = !S3_SECRET || !AUTH_TOKEN;
+  // Opt-in via RUN_LARGE_E2E=1 — the suite downloads a 1 GB fixture and
+  // uploads it to the live deployment (real Telegram storage), so it must
+  // never run implicitly in routine verification.
+  const skipLarge =
+    !S3_SECRET || !AUTH_TOKEN || !LARGE_SOURCE_OK || process.env.RUN_LARGE_E2E !== '1';
   let largeBucket = '';
 
   beforeAll(async () => {
@@ -557,8 +581,16 @@ describe('1 GB large-file upload', () => {
   }, 600_000);
 
   if (skipLarge) {
-    it('1 GB tests skipped — set S3_SECRET_KEY and ADMIN_API_TOKEN', () => {
-      console.info('ℹ️  LARGE_SKIP: set S3_SECRET_KEY + ADMIN_API_TOKEN for 1 GB tests');
+    it('1 GB tests skipped — set RUN_LARGE_E2E=1 + S3_SECRET_KEY + ADMIN_API_TOKEN', () => {
+      if (process.env.RUN_LARGE_E2E !== '1') {
+        console.info('ℹ️  LARGE_SKIP: set RUN_LARGE_E2E=1 to run the 1 GB suite');
+      } else if (!S3_SECRET || !AUTH_TOKEN) {
+        console.info('ℹ️  LARGE_SKIP: set S3_SECRET_KEY + ADMIN_API_TOKEN for 1 GB tests');
+      } else {
+        console.info(
+          `ℹ️  LARGE_SKIP: 1GB source ${LARGE_FILE_URL} unreachable (probe failed) — skipping 1 GB suite`,
+        );
+      }
     });
     return;
   }
