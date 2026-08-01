@@ -109,8 +109,11 @@ export const routes = {
   '/api/v1/auth/me': {
     GET: handleMe,
   },
+  // Read endpoints (GET) are public — anyone can list buckets/objects and
+  // download files. Write endpoints (POST/DELETE/PUT) require admin auth so
+  // visitors cannot upload, edit, copy, or delete.
   '/api/v1/*': {
-    GET: requireAuth(handleWebApiV1),
+    GET: handleWebApiV1,
     POST: requireAuth(handleWebApiV1),
     DELETE: requireAuth(handleWebApiV1),
     PUT: requireAuth(handleWebApiV1),
