@@ -25,6 +25,12 @@ Default to using Bun instead of Node.js.
 - Pengiriman berkas ke Telegram dieksekusi secara responsif dan paralel penuh tanpa batas konkurensi/antrian.
 - Berkas API upload ditulis secara sementara ke disk `/tmp/teleuploader-*` dan di-stream ke Telegram menggunakan `fs.createReadStream` (RAM-optimized) lalu dihapus otomatis setelah 50ms (timeout aman).
 
+## Chunk size (TELEGRAM_CHUNK_SIZE_BYTES)
+
+- Batas keras: Telegram Bot API `getFile` hanya bisa resolve file ≤ 20 MB — di atas itu error `Bad Request: file is too big` dan part tidak bisa di-download.
+- Guard fail-fast di `src/env.ts`: service MENOLAK start (exit non-zero) jika `TELEGRAM_CHUNK_SIZE_BYTES` > 19922944 (19 MB, margin aman dari limit 20 MB). Konstanta: `TELEGRAM_CHUNK_SIZE_MAX_BYTES` di `src/shared/utils/validation.ts`, juga dipakai `asSafeChunkSize()` di runtime.
+- Default 19 MB; berlaku untuk chunked storage DAN S3 multipart parts (sama-sama disimpan ke Telegram lalu di-resolve via getFile).
+
 ## Testing
 
 Use `bun test` to run tests. Jalankan tes secara spesifik (misal `bun test test/rateLimit.test.ts`) untuk menghindari polusi mock antar berkas tes ketika dijalankan bersamaan.

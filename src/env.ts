@@ -1,4 +1,5 @@
 import logger from './shared/logger/index';
+import { TELEGRAM_CHUNK_SIZE_MAX_BYTES } from './shared/utils/validation';
 
 interface AppConfig {
   /** All bot tokens merged from BOT_TOKENS (or BOT_TOKEN + ADDITIONAL_BOT_TOKENS fallback) */
@@ -107,6 +108,29 @@ const maskSecret = (value: string): string => {
 const maskDatabaseUrl = (value: string): string =>
   value.replace(/:\/\/([^:]+):([^@]+)@/, '://$1:***@');
 
+// Fail-fast guard for TELEGRAM_CHUNK_SIZE_BYTES: chunked uploads store every
+// part as a Telegram document and later resolve it via getFile, which only
+// supports files up to 20 MB ("Bad Request: file is too big" above that).
+// A chunk above the limit makes every part undownloadable — refuse to start
+// instead of failing on the first large-file download.
+const telegramChunkSizeBytes = parseNumber(
+  process.env.TELEGRAM_CHUNK_SIZE_BYTES,
+  TELEGRAM_CHUNK_SIZE_MAX_BYTES,
+);
+if (telegramChunkSizeBytes > TELEGRAM_CHUNK_SIZE_MAX_BYTES) {
+  logger.error(
+    `TELEGRAM_CHUNK_SIZE_BYTES=${telegramChunkSizeBytes} exceeds the maximum allowed chunk size ` +
+      `${TELEGRAM_CHUNK_SIZE_MAX_BYTES} bytes (${TELEGRAM_CHUNK_SIZE_MAX_BYTES / (1024 * 1024)} MB). ` +
+      'Telegram Bot API getFile cannot download files larger than 20 MB, so every stored part would ' +
+      'be undownloadable ("Bad Request: file is too big"). ' +
+      `Set TELEGRAM_CHUNK_SIZE_BYTES to ${TELEGRAM_CHUNK_SIZE_MAX_BYTES} or lower.`,
+  );
+  throw new Error(
+    `TELEGRAM_CHUNK_SIZE_BYTES=${telegramChunkSizeBytes} exceeds the maximum allowed chunk size ` +
+      `${TELEGRAM_CHUNK_SIZE_MAX_BYTES} bytes (${TELEGRAM_CHUNK_SIZE_MAX_BYTES / (1024 * 1024)} MB)`,
+  );
+}
+
 export const config: AppConfig = {
   botTokens: parseTokens(botTokensRaw),
   telegramBotConcurrency: parseNumber(process.env.TELEGRAM_BOT_CONCURRENCY, 1),
@@ -122,7 +146,7 @@ export const config: AppConfig = {
   batchMaxItems: parseNumber(process.env.BATCH_MAX_ITEMS, 20),
   batchMaxSizeBytes: parseNumber(process.env.BATCH_MAX_SIZE_BYTES, 500 * 1024 * 1024),
   maxRequestBodyBytes: parseNumber(process.env.MAX_REQUEST_BODY_BYTES, 2 * 1024 * 1024 * 1024),
-  telegramChunkSizeBytes: parseNumber(process.env.TELEGRAM_CHUNK_SIZE_BYTES, 20 * 1024 * 1024),
+  telegramChunkSizeBytes,
   compressChunkedUploads: process.env.COMPRESS_CHUNKED_UPLOADS !== 'false',
   chunkCompressionMinSizeBytes: parseNumber(process.env.CHUNK_COMPRESSION_MIN_SIZE_BYTES, 4096),
   adminApiToken: process.env.ADMIN_API_TOKEN || '',

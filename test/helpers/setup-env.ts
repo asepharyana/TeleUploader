@@ -17,4 +17,10 @@ process.env.DATABASE_URL ||= 'postgresql://user:pass@localhost:5432/test';
 process.env.PORT ||= '3000';
 process.env.NODE_ENV = 'test';
 
+// Pin the chunk size to the safe 19 MB value UNCONDITIONALLY. Bun auto-loads
+// the repo .env before preloads run, and a stale oversized value there would
+// trip the fail-fast guard in src/env.ts and break every test file's import.
+// Tests that need a different value set it explicitly in their own process.
+process.env.TELEGRAM_CHUNK_SIZE_BYTES = String(19 * 1024 * 1024);
+
 // Keep old env names for backward compat with tests that reference them directly
