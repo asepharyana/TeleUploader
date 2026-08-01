@@ -18,7 +18,7 @@
  */
 
 import { afterAll, beforeAll, describe, expect, it } from 'bun:test';
-import { createReadStream, existsSync } from 'node:fs';
+import { existsSync } from 'node:fs';
 
 // ── Config ───────────────────────────────────────────────────────────────────
 const BASE_URL = process.env.BASE_URL || 'https://upload.asepharyana.my.id';
@@ -124,50 +124,6 @@ async function s3Request(
     method,
     headers: { ...headers, 'Content-Type': 'application/octet-stream' },
     body: rawBody.length > 0 ? rawBody : undefined,
-  });
-}
-
-/**
- * Issue a SigV4-signed S3 request with a streaming body using
- * "UNSIGNED-PAYLOAD" so we don't need to load the entire file into
- * memory to compute a SHA-256 hash.
- *
- * The server's verifyBodyHash() skips verification when the header
- * value is "UNSIGNED-PAYLOAD". This lets us send large files without
- * pre-computing the body hash.
- *
- * The body is sent as a ReadableStream, which triggers chunked
- * transfer encoding. This avoids setting Content-Length, which helps
- * bypass intermediate proxy limits.
- */
-async function s3StreamRequest(
-  method: string,
-  path: string,
-  opts: {
-    stream: ReadableStream | NodeJS.ReadableStream;
-    query?: Record<string, string>;
-    extraHeaders?: Record<string, string>;
-  },
-): Promise<Response> {
-  const url = new URL(path, BASE_URL);
-  if (opts.query) {
-    for (const [k, v] of Object.entries(opts.query)) url.searchParams.set(k, v);
-  }
-  const payloadHash = 'UNSIGNED-PAYLOAD';
-  const headers = s3Headers(
-    method,
-    url.host,
-    url.pathname,
-    url.searchParams.toString(),
-    payloadHash,
-    opts.extraHeaders,
-  );
-  // Omit Content-Type for streaming bodies so Bun uses chunked encoding
-  // and does not set Content-Length.
-  return fetch(url.toString(), {
-    method,
-    headers: { ...headers },
-    body: opts.stream,
   });
 }
 

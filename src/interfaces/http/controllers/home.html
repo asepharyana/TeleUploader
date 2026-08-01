@@ -363,7 +363,7 @@
     const init=async()=>{await checkAuth();await loadBuckets();};
     document.getElementById('authLoginBtn').addEventListener('click',handleLogin);
     document.getElementById('authTokenInput').addEventListener('keydown',e=>{if(e.key==='Enter')handleLogin();});
-    Object.assign(window, { switchBucket, navigateTo, debouncedSearch, downloadObject, copyLink, deleteObject, closeModal, showCreateBucketModal, createBucket, showCredentialsModal, logout });
+    Object.assign(window, { switchBucket, navigateTo, debouncedSearch, downloadObject, copyLink, deleteObject, closeModal, showCreateBucketModal, createBucket, showCredentialsModal, showAuthScreen, logout });
     init();
   </script>
 </body>
