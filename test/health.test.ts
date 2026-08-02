@@ -19,7 +19,7 @@ describe('Health Route Handler', () => {
   });
 
   it('should return status 200 and ok when DB is healthy', async () => {
-    const req = new Request('http://localhost:3000/health');
+    const req = new Request('http://localhost:4000/health');
     const res = await handleHealth(req);
 
     expect(res.status).toBe(200);
@@ -30,7 +30,7 @@ describe('Health Route Handler', () => {
 
   it('should return status 500 and error details when DB health check fails', async () => {
     mockExecute.mockImplementationOnce(() => Promise.reject(new Error('DB Connection Failed')));
-    const req = new Request('http://localhost:3000/health');
+    const req = new Request('http://localhost:4000/health');
     const res = await handleHealth(req);
 
     expect(res.status).toBe(500);

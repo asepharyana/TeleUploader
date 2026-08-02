@@ -151,7 +151,7 @@ describe('File Route Handlers', () => {
     it('should return 404 if file is not found in database', async () => {
       mockFindByPublicId.mockImplementationOnce(async () => null);
 
-      const req = requestWithPublicId('http://localhost:3000/f/missing-id', 'missing-id');
+      const req = requestWithPublicId('http://localhost:4000/f/missing-id', 'missing-id');
       const res = await handleFileRedirect(req);
       expect(res.status).toBe(404);
       const body = await responseJson<ErrorBody>(res);
@@ -187,7 +187,7 @@ describe('File Route Handlers', () => {
         updatedAt: new Date('2026-05-18T00:00:00.000Z'),
       }));
 
-      const req = requestWithPublicId('http://localhost:3000/f/test-id', 'test-id');
+      const req = requestWithPublicId('http://localhost:4000/f/test-id', 'test-id');
       const res = await handleFileRedirect(req);
 
       expect(res.status).toBe(302);
@@ -201,7 +201,7 @@ describe('File Route Handlers', () => {
         throw new Error('DB Connection Error');
       });
 
-      const req = requestWithPublicId('http://localhost:3000/f/test-id', 'test-id');
+      const req = requestWithPublicId('http://localhost:4000/f/test-id', 'test-id');
       const res = await handleFileRedirect(req);
       expect(res.status).toBe(500);
       const body = await responseJson<ErrorBody>(res);
@@ -213,7 +213,7 @@ describe('File Route Handlers', () => {
     it('should return 404 if file is not found in database', async () => {
       mockFindByPublicId.mockImplementationOnce(async () => null);
 
-      const req = requestWithPublicId('http://localhost:3000/file/missing-id/info', 'missing-id');
+      const req = requestWithPublicId('http://localhost:4000/file/missing-id/info', 'missing-id');
       const res = await handleFileInfo(req);
       expect(res.status).toBe(404);
       const body = await responseJson<ErrorBody>(res);
@@ -251,7 +251,7 @@ describe('File Route Handlers', () => {
 
       mockFindByPublicId.mockImplementationOnce(async () => dbFile);
 
-      const req = requestWithPublicId('http://localhost:3000/file/test-id/info', 'test-id');
+      const req = requestWithPublicId('http://localhost:4000/file/test-id/info', 'test-id');
       const res = await handleFileInfo(req);
       expect(res.status).toBe(200);
       const body = await responseJson<FileInfoBody>(res);
@@ -273,7 +273,7 @@ describe('File Route Handlers', () => {
         throw new Error('DB Connection Error');
       });
 
-      const req = requestWithPublicId('http://localhost:3000/file/test-id/info', 'test-id');
+      const req = requestWithPublicId('http://localhost:4000/file/test-id/info', 'test-id');
       const res = await handleFileInfo(req);
       expect(res.status).toBe(500);
       const body = await responseJson<ErrorBody>(res);

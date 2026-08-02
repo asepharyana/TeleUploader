@@ -3,7 +3,7 @@ import { afterAll, beforeAll, describe, expect, it, mock } from 'bun:test';
 process.env.NODE_ENV = 'test';
 process.env.BOT_TOKEN = '123456:ABC-DEF';
 process.env.STORAGE_CHANNEL_ID = '-1001234567890';
-process.env.BASE_URL = 'http://localhost:3000';
+process.env.BASE_URL = 'http://localhost:4000';
 process.env.DATABASE_URL = 'postgresql://localhost/test';
 process.env.PORT = '3000';
 process.env.S3_ACCESS_KEY = 'filedrop-admin';
@@ -90,7 +90,7 @@ describe('S3 bucket configuration compatibility', () => {
   });
 
   it('returns VersioningConfiguration for path-style GetBucketVersioning', async () => {
-    const res = await handleS3Request(new Request('http://localhost:3000/gitea?versioning'));
+    const res = await handleS3Request(new Request('http://localhost:4000/gitea?versioning'));
     const body = await res.text();
 
     expect(res.status).toBe(200);
@@ -101,7 +101,7 @@ describe('S3 bucket configuration compatibility', () => {
 
   it('returns VersioningConfiguration for virtual-hosted GetBucketVersioning', async () => {
     const res = await handleS3Request(
-      new Request('http://gitea.localhost:3000/?versioning'),
+      new Request('http://gitea.localhost:4000/?versioning'),
       'gitea',
     );
     const body = await res.text();

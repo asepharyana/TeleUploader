@@ -117,7 +117,7 @@ describe('Upload Route Handler', () => {
   });
 
   it('should reject unsupported content types with 400 status', async () => {
-    const req = new Request('http://localhost:3000/api/upload', {
+    const req = new Request('http://localhost:4000/api/upload', {
       method: 'POST',
       headers: {
         'content-type': 'text/plain',
@@ -132,7 +132,7 @@ describe('Upload Route Handler', () => {
   });
 
   it('should process JSON upload (base64) successfully', async () => {
-    const req = new Request('http://localhost:3000/api/upload', {
+    const req = new Request('http://localhost:4000/api/upload', {
       method: 'POST',
       headers: {
         'content-type': 'application/json',
@@ -160,7 +160,7 @@ describe('Upload Route Handler', () => {
   });
 
   it('should reject JSON upload without file key', async () => {
-    const req = new Request('http://localhost:3000/api/upload', {
+    const req = new Request('http://localhost:4000/api/upload', {
       method: 'POST',
       headers: {
         'content-type': 'application/json',
@@ -181,7 +181,7 @@ describe('Upload Route Handler', () => {
     const fileBlob = new Blob([realPhotoBuffer], { type: 'image/png' });
     formData.append('file', fileBlob, 'test_multi.png');
 
-    const req = new Request('http://localhost:3000/api/upload', {
+    const req = new Request('http://localhost:4000/api/upload', {
       method: 'POST',
       body: formData,
     });
@@ -214,7 +214,7 @@ describe('Upload Route Handler', () => {
     const fileBlob = new Blob([Buffer.from('multipart hello')], { type: 'text/plain' });
     formData.append('file', fileBlob, 'test_multi.txt');
 
-    const req = new Request('http://localhost:3000/api/upload', {
+    const req = new Request('http://localhost:4000/api/upload', {
       method: 'POST',
       body: formData,
     });
@@ -252,7 +252,7 @@ describe('Upload Route Handler', () => {
       updatedAt: new Date('2026-05-18T00:00:00.000Z'),
     };
 
-    const req = new Request('http://localhost:3000/api/upload', {
+    const req = new Request('http://localhost:4000/api/upload', {
       method: 'POST',
       headers: {
         'content-type': 'application/json',
@@ -281,7 +281,7 @@ describe('Upload Route Handler', () => {
   });
 
   it('should reject oversized request by Content-Length header', async () => {
-    const req = new Request('http://localhost:3000/api/upload', {
+    const req = new Request('http://localhost:4000/api/upload', {
       method: 'POST',
       headers: {
         'content-type': 'application/json',

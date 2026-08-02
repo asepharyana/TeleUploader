@@ -58,7 +58,7 @@ describe('Web API v1', () => {
   beforeAll(async () => {
     process.env.BOT_TOKEN = '123456:ABC-DEF';
     process.env.STORAGE_CHANNEL_ID = '-1001234567890';
-    process.env.BASE_URL = 'http://localhost:3000';
+    process.env.BASE_URL = 'http://localhost:4000';
     process.env.DATABASE_URL = 'postgresql://localhost/test';
     const webApi = await import('../src/interfaces/http/controllers/web-api-controller');
     handleWebApiV1 = webApi.handleWebApiV1;
@@ -74,7 +74,7 @@ describe('Web API v1', () => {
   });
 
   it('should list buckets via GET /api/v1/buckets', async () => {
-    const req = new Request('http://localhost:3000/api/v1/buckets');
+    const req = new Request('http://localhost:4000/api/v1/buckets');
     const res = await handleWebApiV1(req);
     expect(res.status).toBe(200);
     const data = (await res.json()) as { buckets: { name: string }[] };
@@ -84,7 +84,7 @@ describe('Web API v1', () => {
   });
 
   it('should return 404 for unknown API path', async () => {
-    const req = new Request('http://localhost:3000/api/v1/unknown');
+    const req = new Request('http://localhost:4000/api/v1/unknown');
     const res = await handleWebApiV1(req);
     expect(res.status).toBe(404);
     const data = (await res.json()) as { error: string };
@@ -92,7 +92,7 @@ describe('Web API v1', () => {
   });
 
   it('should return 400 for invalid bucket name on create', async () => {
-    const req = new Request('http://localhost:3000/api/v1/buckets', {
+    const req = new Request('http://localhost:4000/api/v1/buckets', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ name: 'INVALID_NAME!' }),
@@ -117,7 +117,7 @@ describe('Web API v1', () => {
       },
     ];
 
-    const req = new Request('http://localhost:3000/api/v1/buckets/test-bucket/objects');
+    const req = new Request('http://localhost:4000/api/v1/buckets/test-bucket/objects');
     const res = await handleWebApiV1(req);
 
     expect(res.status).toBe(200);
