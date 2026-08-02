@@ -4,12 +4,11 @@ Backend production-ready untuk upload file ke Telegram yang tersimpan di private
 
 ## Setup
 
-1. Install PostgreSQL database
-2. Buat database: `createdb telegram_uploader`
-3. Setup environment: `cp .env.example .env`
-4. Edit `.env` dengan nilai yang sesuai
-5. Create table: `bun run db:migrate`
-6. Install dependencies: `bun install`
+1. Siapkan PostgreSQL database (produksi: database `uploader` via PgBouncer pool di `100.121.180.82:6432`)
+2. Setup environment: `cp .env.example .env`
+3. Edit `.env` dengan nilai yang sesuai (lihat `DATABASE_URL`, `PORT=4000`)
+4. Create table: `bun run db:migrate`
+5. Install dependencies: `bun install`
 
 ## Telegram Private Channel Setup
 
@@ -24,6 +23,20 @@ bun run dev      # Development mode
 bun run start    # Production mode
 ```
 
+## Deployment (Produksi — Nix + systemd)
+
+> Infra lama berbasis Docker + Traefik sudah dihapus dari orangevps (2026-08-02).
+
+- **Host**: orangevps
+- **Service**: systemd unit `teleuploader` (env via `/etc/teleuploader/env` / BWS secrets)
+- **Build**: Nix flake (`flake.nix`) — `nix build .#teleuploader` → `nix copy` → `systemctl restart teleuploader`
+- **CI**: `.github/workflows/deploy.yml` (Gitea Actions / GitHub Actions)
+- **Port**: `4000` (`PORT` env)
+- **Domain**: `https://upload.asepharyana.my.id`
+- **Reverse proxy**: Caddy (bukan Traefik/Docker)
+- **Database**: `postgresql://asephs:***@100.121.180.82:6432/uploader` (PgBouncer pool di imrnes, **bukan** 5432/localhost)
+- `deploy.sh` & `Dockerfile` & `docker-compose.yml` bersifat **legacy** — jangan dipakai untuk deploy produksi.
+
 ## API Endpoints
 
 - `POST /api/upload` - Upload file
@@ -34,7 +47,7 @@ bun run start    # Production mode
 ## FAQ
 
 **URL permanen maksudnya apa?**
-URL backend tetap permanen: `https://tele.asepharyana.my.id/f/{public_id}`
+URL backend tetap permanen: `https://upload.asepharyana.my.id/f/{public_id}`
 Ini berarti URL service Anda fix, bukan jaminan file Telegram abadi.
 
 ## Testing

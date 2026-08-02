@@ -4,7 +4,7 @@ process.env.BOT_TOKENS = 'bot1:token,bot2:token,bot3:token';
 process.env.STORAGE_CHANNEL_ID = '-1001234567890';
 process.env.BASE_URL = 'https://example.com';
 process.env.DATABASE_URL = 'sqlite://test.db';
-process.env.PORT = '3000';
+process.env.PORT = '4000';
 
 // Track mock queue instances for per-bot assertions
 const queueInstances: Array<{

@@ -1,4 +1,9 @@
 #!/bin/bash
+# ⚠️ LEGACY — Script deploy lama berbasis Docker. Sejak 2026-08-02 Docker dihapus
+# dari orangevps; produksi kini memakai Nix + systemd (lihat flake.nix, dan CI
+# .github/workflows/deploy.yml yang menjalankan `nix build` → `nix copy` →
+# `systemctl restart teleuploader`). Berkas ini hanya dipertahankan sebagai
+# referensi historis — JANGAN dipakai untuk deploy produksi.
 # ─── FileDrop Deploy Script ──────────────────────────────────────────────────
 # Builds the Bun app locally and deploys to the VPS via Docker.
 #

@@ -1,5 +1,5 @@
 const stripPort = (host: string): string => {
-  // Handle IPv6: [::1]:8080 -> [::1]
+  // Handle IPv6: [::1]:4321 -> [::1]
   if (host.startsWith('[')) {
     const closeBracket = host.indexOf(']');
     return host.slice(0, closeBracket + 1).toLowerCase();

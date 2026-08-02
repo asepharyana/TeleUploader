@@ -1,3 +1,7 @@
+# ⚠️ LEGACY — pembangunan & deploy sekarang DISARANKAN memakai Nix + systemd
+# (lihat flake.nix + .github/workflows/deploy.yml + Caddy reverse proxy di orangevps).
+# Dockerfile ini hanya dipertahankan untuk konteks historis / fallback, bukan deploy produksi.
+
 # Stage 1: Builder
 FROM oven/bun:alpine AS builder
 
@@ -26,7 +30,7 @@ COPY schema.sql ./
 COPY package.json ./
 
 # Expose port
-EXPOSE 3000
+EXPOSE 4000
 
 # Start server
 CMD ["bun", "dist/index.js"]

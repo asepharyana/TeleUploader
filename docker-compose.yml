@@ -1,3 +1,6 @@
+# ⚠️ LEGACY — Docker/Traefik sudah DIHAPUS dari VPS produksi (orangevps).
+# Deploy sekarang Nix + systemd (flake.nix + .github/workflows/deploy.yml) dengan
+# Caddy reverse proxy. Berkas ini hanya dipertahankan sebagai referensi historis.
 services:
   app:
     build: .

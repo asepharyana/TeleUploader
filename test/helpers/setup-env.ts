@@ -13,8 +13,8 @@
 process.env.BOT_TOKENS ||= '123456:ABC-DEF,789012:GHI-JKL,345678:MNO-PQR';
 process.env.STORAGE_CHANNEL_ID ||= '-1001234567890';
 process.env.BASE_URL ||= 'https://example.com';
-process.env.DATABASE_URL ||= 'postgresql://user:pass@localhost:5432/test';
-process.env.PORT ||= '3000';
+process.env.DATABASE_URL ||= 'postgresql://asephs:***@100.121.180.82:6432/test';
+process.env.PORT ||= '4000';
 process.env.NODE_ENV = 'test';
 
 // Pin the chunk size to the safe 19 MB value UNCONDITIONALLY. Bun auto-loads

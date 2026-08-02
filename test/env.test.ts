@@ -28,7 +28,7 @@ describe('Environment Variables Validation', () => {
     expect(config.storageChatId).toBe(parseInt(process.env.STORAGE_CHANNEL_ID || '0', 10));
   });
 
-  it('config.port should default to 3000 when not specified', () => {
+  it('config.port should default to 4000 when not specified', () => {
     expect(typeof config.port).toBe('number');
   });
 
@@ -108,8 +108,8 @@ describe('Telegram chunk size validation', () => {
         BOT_TOKENS: '123456:ABC-DEF',
         STORAGE_CHANNEL_ID: '-1001234567890',
         BASE_URL: 'https://example.com',
-        DATABASE_URL: 'postgresql://user:***@localhost:5432/test',
-        PORT: '3000',
+        DATABASE_URL: 'postgresql://asephs:***@100.121.180.82:6432/test',
+        PORT: '4000',
         TELEGRAM_CHUNK_SIZE_BYTES: String(48 * 1024 * 1024),
       },
       stdout: 'pipe',
@@ -131,8 +131,8 @@ describe('Telegram chunk size validation', () => {
         BOT_TOKENS: '123456:ABC-DEF',
         STORAGE_CHANNEL_ID: '-1001234567890',
         BASE_URL: 'https://example.com',
-        DATABASE_URL: 'postgresql://user:***@localhost:5432/test',
-        PORT: '3000',
+        DATABASE_URL: 'postgresql://asephs:***@100.121.180.82:6432/test',
+        PORT: '4000',
         TELEGRAM_CHUNK_SIZE_BYTES: String(TELEGRAM_CHUNK_SIZE_MAX_BYTES),
       },
       stdout: 'pipe',

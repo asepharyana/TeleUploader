@@ -59,7 +59,7 @@ describe('Web API v1', () => {
     process.env.BOT_TOKEN = '123456:ABC-DEF';
     process.env.STORAGE_CHANNEL_ID = '-1001234567890';
     process.env.BASE_URL = 'http://localhost:4000';
-    process.env.DATABASE_URL = 'postgresql://localhost/test';
+    process.env.DATABASE_URL = 'postgresql://asephs:***@100.121.180.82:6432/test';
     const webApi = await import('../src/interfaces/http/controllers/web-api-controller');
     handleWebApiV1 = webApi.handleWebApiV1;
   });

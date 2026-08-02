@@ -7,6 +7,12 @@ metadata:
 
 # Design: TeleUploader Deployment & CI/CD Setup
 
+> ⚠️ **LEGACY** — Dokumen historis (2026-05-18) untuk arsitektur Docker + Traefik +
+> GitHub Actions. Docker & Traefik sudah dihapus dari VPS produksi (2026-08-02):
+> deploy sekarang Nix + systemd + Caddy di orangevps, port `4000`, domain
+> `upload.asepharyana.my.id`, database via PgBouncer pool `100.121.180.82:6432`.
+
+
 We are setting up production deployment for TeleUploader on VPS `45.127.35.244` behind Traefik utilizing GitHub Actions.
 
 ## 1. System Architecture
@@ -22,7 +28,7 @@ TeleUploader is a Bun-based service.
 ### `Dockerfile`
 - Multi-stage build.
 - **Stage 1 (Build)**: Install dependencies, copy source files, run Biome lint/format checks, compile TS build to `dist/index.js` using `bun build`.
-- **Stage 2 (Run)**: Use minimal `oven/bun:1.1-slim` runtime. Copy `dist/index.js`, `schema.sql`, and `package.json`. Expose port `3000`.
+- **Stage 2 (Run)**: Use minimal `oven/bun:1.1-slim` runtime. Copy `dist/index.js`, `schema.sql`, and `package.json`. Expose port `4000`.
 
 ### `docker-compose.yml`
 ```yaml
@@ -38,7 +44,7 @@ services:
       - STORAGE_CHANNEL_ID=${STORAGE_CHANNEL_ID}
       - BASE_URL=${BASE_URL}
       - DATABASE_URL=${DATABASE_URL}
-      - PORT=3000
+      - PORT=4000
       - NODE_ENV=production
       - LOG_LEVEL=info
     networks:
@@ -49,7 +55,7 @@ services:
       - "traefik.http.routers.teleuploader.entrypoints=websecure"
       - "traefik.http.routers.teleuploader.tls=true"
       - "traefik.http.routers.teleuploader.tls.certresolver=letsencrypt"
-      - "traefik.http.services.teleuploader.loadbalancer.server.port=3000"
+      - "traefik.http.services.teleuploader.loadbalancer.server.port=4000"
 
 networks:
   app-shared-net:

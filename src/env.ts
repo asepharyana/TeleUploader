@@ -137,7 +137,7 @@ export const config: AppConfig = {
   storageChatId: parseInt(process.env.STORAGE_CHANNEL_ID!, 10),
   baseUrl: process.env.BASE_URL!,
   databaseUrl: process.env.DATABASE_URL!,
-  port: parseInt(process.env.PORT!, 10) || 3000,
+  port: parseInt(process.env.PORT!, 10) || 4000,
   nodeEnv: process.env.NODE_ENV || 'development',
   logLevel: process.env.LOG_LEVEL || 'info',
   rateLimitWindowMs: parseNumber(process.env.RATE_LIMIT_WINDOW_MS, 60000),

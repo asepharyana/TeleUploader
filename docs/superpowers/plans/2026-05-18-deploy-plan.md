@@ -1,5 +1,11 @@
 # Docker, Traefik, and GitHub Actions Deployment Plan
 
+> ⚠️ **LEGACY** — Dokumen historis (2026-05-18). Arsitektur Docker + Traefik +
+> GitHub Actions sudah digantikan (2026-08-02) oleh Nix + systemd + Caddy di
+> orangevps: port `4000`, domain `upload.asepharyana.my.id`, database via
+> PgBouncer pool `100.121.180.82:6432` (bukan 5432/localhost).
+
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Containerize TeleUploader using Bun, configure Traefik labels for routing `upload.asepharyana.my.id`, and set up full GitHub Actions CI/CD to VPS `45.127.35.244`.
@@ -57,7 +63,7 @@ WORKDIR /usr/src/app
 
 # Set production environment variables
 ENV NODE_ENV=production
-ENV PORT=3000
+ENV PORT=4000
 
 # Copy necessary files from builder and repo
 COPY --from=builder /usr/src/app/dist/index.js ./dist/index.js
@@ -65,7 +71,7 @@ COPY --from=builder /usr/src/app/package.json ./package.json
 COPY schema.sql ./schema.sql
 
 # Expose server port
-EXPOSE 3000
+EXPOSE 4000
 
 # Start server
 CMD ["bun", "dist/index.js"]
@@ -104,7 +110,7 @@ services:
       - STORAGE_CHANNEL_ID=${STORAGE_CHANNEL_ID}
       - BASE_URL=${BASE_URL}
       - DATABASE_URL=${DATABASE_URL}
-      - PORT=3000
+      - PORT=4000
       - NODE_ENV=production
       - LOG_LEVEL=info
     networks:
@@ -115,7 +121,7 @@ services:
       - "traefik.http.routers.teleuploader.entrypoints=websecure"
       - "traefik.http.routers.teleuploader.tls=true"
       - "traefik.http.routers.teleuploader.tls.certresolver=letsencrypt"
-      - "traefik.http.services.teleuploader.loadbalancer.server.port=3000"
+      - "traefik.http.services.teleuploader.loadbalancer.server.port=4000"
 
 networks:
   app-shared-net:
@@ -166,9 +172,9 @@ jobs:
         env:
           BOT_TOKEN: "mock_token"
           STORAGE_CHANNEL_ID: "123456"
-          BASE_URL: "http://localhost:3000"
-          DATABASE_URL: "postgresql://postgres:postgres@localhost:5432/postgres"
-          PORT: "3000"
+          BASE_URL: "http://localhost:4000"
+          DATABASE_URL: "postgresql://asephs:***@100.121.180.82:6432/postgres"
+          PORT: "4000"
         run: bun run test
 
   build-and-push:
@@ -223,7 +229,7 @@ jobs:
                   - STORAGE_CHANNEL_ID=${STORAGE_CHANNEL_ID}
                   - BASE_URL=${BASE_URL}
                   - DATABASE_URL=${DATABASE_URL}
-                  - PORT=3000
+                  - PORT=4000
                   - NODE_ENV=production
                   - LOG_LEVEL=info
                 networks:
@@ -234,7 +240,7 @@ jobs:
                   - "traefik.http.routers.teleuploader.entrypoints=websecure"
                   - "traefik.http.routers.teleuploader.tls=true"
                   - "traefik.http.routers.teleuploader.tls.certresolver=letsencrypt"
-                  - "traefik.http.services.teleuploader.loadbalancer.server.port=3000"
+                  - "traefik.http.services.teleuploader.loadbalancer.server.port=4000"
 
             networks:
               app-shared-net:
@@ -248,7 +254,7 @@ jobs:
             STORAGE_CHANNEL_ID=${{ secrets.STORAGE_CHANNEL_ID }}
             BASE_URL=${{ secrets.BASE_URL }}
             DATABASE_URL=${{ secrets.DATABASE_URL }}
-            PORT=3000
+            PORT=4000
             EOF
 
             # Pull latest docker image

@@ -1,5 +1,10 @@
 # Telegram Bot Uploader Backend Implementation Plan
 
+> ⚠️ **LEGACY** — Dokumen historis (2026-05-17). Port & infrastruktur sudah berubah:
+> produksi kini berjalan di port `4000` (Nix + systemd + Caddy, domain `upload.asepharyana.my.id`)
+> dan database via PgBouncer pool `100.121.180.82:6432` (bukan port 5432, bukan localhost).
+
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Production-ready backend for Telegram file uploader with dual upload methods (bot + HTTP API), PostgreSQL storage, and redirect-based downloads.
@@ -75,9 +80,9 @@ schema.sql
 ```bash
 BOT_TOKEN=isi_token_bot_telegram
 STORAGE_CHANNEL_ID=-1001234567890
-BASE_URL=https://tele.asepharyana.my.id
-DATABASE_URL=postgresql://user:password@localhost:5432/telegram_uploader
-PORT=3000
+BASE_URL=https://upload.asepharyana.my.id
+DATABASE_URL=postgresql://asephs:***@100.121.180.82:6432/uploader
+PORT=4000
 NODE_ENV=production
 LOG_LEVEL=info
 RATE_LIMIT_WINDOW_MS=60000
@@ -148,7 +153,7 @@ bun run start    # Production mode
 ## FAQ
 
 **URL permanen maksudnya apa?**
-URL backend tetap permanen: `https://tele.asepharyana.my.id/f/{public_id}`
+URL backend tetap permanen: `https://upload.asepharyana.my.id/f/{public_id}`
 Ini berarti URL service Anda fix, bukan jaminan file Telegram abadi.
 
 ## Testing
@@ -250,7 +255,7 @@ export const config = {
   storageChatId: parseInt(process.env.STORAGE_CHANNEL_ID, 10),
   baseUrl: process.env.BASE_URL,
   databaseUrl: process.env.DATABASE_URL,
-  port: parseInt(process.env.PORT, 10) || 3000,
+  port: parseInt(process.env.PORT, 10) || 4000,
   nodeEnv: process.env.NODE_ENV || 'development',
   logLevel: process.env.LOG_LEVEL || 'info',
   rateLimitWindowMs: parseInt(process.env.RATE_LIMIT_WINDOW_MS, 10) || 60000,
@@ -1009,14 +1014,14 @@ bun run dev
 - [ ] **Step 2: Test health endpoint**
 
 ```bash
-curl http://localhost:3000/health
+curl http://localhost:4000/health
 # Expected: {"status":"ok"}
 ```
 
 - [ ] **Step 3: Upload test file via HTTP API (multipart)**
 
 ```bash
-curl -X POST http://localhost:3000/api/upload \
+curl -X POST http://localhost:4000/api/upload \
   -F "file=@/path/to/testfile.txt" \
   -F "fileName=test.txt"
 ```
@@ -1024,14 +1029,14 @@ curl -X POST http://localhost:3000/api/upload \
 - [ ] **Step 4: Check file info endpoint**
 
 ```bash
-curl http://localhost:3000/file/{public_id}/info
+curl http://localhost:4000/file/{public_id}/info
 # Expected: JSON with file metadata
 ```
 
 - [ ] **Step 5: Download redirect**
 
 ```bash
-curl -I http://localhost:3000/f/{public_id}
+curl -I http://localhost:4000/f/{public_id}
 # Expected: HTTP 302 with Location header to Telegram CDN
 ```
 
@@ -1047,7 +1052,7 @@ curl -I http://localhost:3000/f/{public_id}
 - [ ] **Step 7: Test error handling (file too large)**
 
 ```bash
-curl -X POST http://localhost:3000/api/upload \
+curl -X POST http://localhost:4000/api/upload \
   -F "file=@/dev/null" \
   -H "Content-Length: 10000000000"
 # Expected: HTTP 400 with error message
@@ -1057,7 +1062,7 @@ curl -X POST http://localhost:3000/api/upload \
 
 ```bash
 # Send 31 requests within 1 minute
-for i in {1..31}; do curl http://localhost:3000/f/{public_id} & done
+for i in {1..31}; do curl http://localhost:4000/f/{public_id} & done
 wait
 # Expected: First 30 succeed, last one returns 429
 ```
@@ -1066,7 +1071,7 @@ wait
 
 ```bash
 # In terminal 1: bun run dev
-# In terminal 2: curl http://localhost:3000/health && sleep 0.1 && curl http://localhost:3000/health
+# In terminal 2: curl http://localhost:4000/health && sleep 0.1 && curl http://localhost:4000/health
 # Send SIGINT to server (Ctrl+C in terminal 1)
 # Check if server stops cleanly, logs show shutdown sequence
 ```

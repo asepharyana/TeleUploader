@@ -10,8 +10,8 @@ const setEnv = (key: string, value: string) => {
 defaultEnv('BOT_TOKEN', '123456:ABC-DEF');
 defaultEnv('STORAGE_CHANNEL_ID', '-1001234567890');
 defaultEnv('BASE_URL', 'https://example.com');
-defaultEnv('DATABASE_URL', 'postgresql://user:pass@localhost:5432/test');
-defaultEnv('PORT', '3000');
+defaultEnv('DATABASE_URL', 'postgresql://asephs:***@100.121.180.82:6432/test');
+defaultEnv('PORT', '4000');
 defaultEnv('NODE_ENV', 'test');
 setEnv('ADMIN_API_TOKEN', 'route-secret-token');
 setEnv('SESSION_COOKIE_NAME', 'route_session');

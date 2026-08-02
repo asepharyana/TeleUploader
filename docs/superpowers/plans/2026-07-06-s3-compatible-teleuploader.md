@@ -1,5 +1,11 @@
 # S3-Compatible TeleUploader Implementation Plan
 
+> ⚠️ **LEGACY** — Dokumen historis (2026-07-06). Port & infrastruktur sudah berubah:
+> produksi kini berjalan di port `4000` (Nix + systemd + Caddy, domain
+> `upload.asepharyana.my.id`), database via PgBouncer pool `100.121.180.82:6432`
+> (bukan 5432/localhost). Contoh kode di bawah memakai `localhost:4000` untuk dev.
+
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Transform TeleUploader into an S3-compatible storage server (Telegram-backed) with a web file manager UI.
@@ -2675,7 +2681,7 @@ describe('S3 Bucket Operations', () => {
     process.env.S3_DEFAULT_REGION = 'us-east-1';
     process.env.BOT_TOKEN = '123456:ABC-DEF';
     process.env.STORAGE_CHANNEL_ID = '-1001234567890';
-    process.env.BASE_URL = 'http://localhost:3000';
+    process.env.BASE_URL = 'http://localhost:4000';
     process.env.DATABASE_URL = 'postgresql://localhost/test';
   });
 
@@ -2684,7 +2690,7 @@ describe('S3 Bucket Operations', () => {
   });
 
   it('should return 403 for unauthorized requests', async () => {
-    const req = new Request('http://localhost:3000/', {
+    const req = new Request('http://localhost:4000/', {
       method: 'GET',
       headers: { authorization: 'Invalid' },
     });
@@ -2849,7 +2855,7 @@ describe('Web API v1', () => {
     mockDbExecute.mockClear();
     process.env.BOT_TOKEN = '123456:ABC-DEF';
     process.env.STORAGE_CHANNEL_ID = '-1001234567890';
-    process.env.BASE_URL = 'http://localhost:3000';
+    process.env.BASE_URL = 'http://localhost:4000';
     process.env.DATABASE_URL = 'postgresql://localhost/test';
   });
 
@@ -2858,7 +2864,7 @@ describe('Web API v1', () => {
   });
 
   it('should list buckets via GET /api/v1/buckets', async () => {
-    const req = new Request('http://localhost:3000/api/v1/buckets');
+    const req = new Request('http://localhost:4000/api/v1/buckets');
     const res = await handleWebApiV1(req);
     expect(res.status).toBe(200);
     const data = await res.json();
@@ -2867,7 +2873,7 @@ describe('Web API v1', () => {
   });
 
   it('should return 404 for unknown API path', async () => {
-    const req = new Request('http://localhost:3000/api/v1/unknown');
+    const req = new Request('http://localhost:4000/api/v1/unknown');
     const res = await handleWebApiV1(req);
     expect(res.status).toBe(404);
     const data = await res.json();
@@ -2875,7 +2881,7 @@ describe('Web API v1', () => {
   });
 
   it('should return bucket object listing', async () => {
-    const req = new Request('http://localhost:3000/api/v1/buckets/test-bucket/objects?prefix=');
+    const req = new Request('http://localhost:4000/api/v1/buckets/test-bucket/objects?prefix=');
     const res = await handleWebApiV1(req);
     // Should return 200 even with empty results
     expect(res.status).toBe(200);
@@ -2885,7 +2891,7 @@ describe('Web API v1', () => {
   });
 
   it('should reject invalid bucket name on create', async () => {
-    const req = new Request('http://localhost:3000/api/v1/buckets', {
+    const req = new Request('http://localhost:4000/api/v1/buckets', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ name: 'INVALID_NAME!' }),

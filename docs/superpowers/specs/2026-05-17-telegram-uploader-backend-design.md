@@ -1,5 +1,10 @@
 # Telegram Bot Uploader Backend Design
 
+> ⚠️ **LEGACY** — Dokumen historis (2026-05-17). Port & infrastruktur sudah berubah:
+> produksi kini berjalan di port `4000` (Nix + systemd + Caddy, domain `upload.asepharyana.my.id`)
+> dan database via PgBouncer pool `100.121.180.82:6432` (bukan port 5432, bukan localhost).
+
+
 **Date:** 2026-05-17  
 **Status:** Approved  
 **Stack:** Bun, Telegraf, PostgreSQL, Drizzle ORM, Winston, nanoid
@@ -35,7 +40,7 @@ Production-ready backend untuk Telegram file uploader dengan dual upload methods
 4. Bot extracts `telegram_file_id`, `telegram_file_unique_id`, `storage_message_id`
 5. Bot generates `public_id` using nanoid
 6. Bot saves metadata to PostgreSQL
-7. Bot replies with download link: `https://tele.asepharyana.my.id/f/{public_id}`
+7. Bot replies with download link: `https://upload.asepharyana.my.id/f/{public_id}`
 
 #### Upload via HTTP API
 1. Client POSTs to `/api/upload` with file (multipart or base64)
@@ -115,7 +120,7 @@ fileName: optional_filename.ext
   "size_bytes": 1024000,
   "file_type": "document",
   "created_at": "2026-05-17T23:42:19Z",
-  "download_url": "https://tele.asepharyana.my.id/f/abc123xyz"
+  "download_url": "https://upload.asepharyana.my.id/f/abc123xyz"
 }
 ```
 
@@ -212,9 +217,9 @@ schema.sql
 ```
 BOT_TOKEN=<telegram_bot_token>
 STORAGE_CHANNEL_ID=<private_channel_id>
-BASE_URL=https://tele.asepharyana.my.id
-DATABASE_URL=postgresql://user:password@localhost:5432/telegram_uploader
-PORT=3000
+BASE_URL=https://upload.asepharyana.my.id
+DATABASE_URL=postgresql://asephs:***@100.121.180.82:6432/uploader
+PORT=4000
 NODE_ENV=production
 LOG_LEVEL=info
 RATE_LIMIT_WINDOW_MS=60000
