@@ -1,5 +1,7 @@
 # S3 Compatibility Completion Design
 
+> Catatan (2026-08-02): Produksi sekarang port 4000, deploy Nix+systemd di orangevps, Caddy reverse proxy upload.asepharyana.my.id, DB via pgbouncer pool imrnes 100.121.180.82:6432. Docker/Traefik/Gitea-CI legacy.
+
 Date: 2026-07-07
 
 ## Goal

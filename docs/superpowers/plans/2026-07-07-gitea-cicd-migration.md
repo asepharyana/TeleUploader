@@ -1,5 +1,7 @@
 # Gitea CI/CD Migration Implementation Plan
 
+> Catatan (2026-08-02): Produksi sekarang port 4000, deploy Nix+systemd di orangevps, Caddy reverse proxy upload.asepharyana.my.id, DB via pgbouncer pool imrnes 100.121.180.82:6432. Docker/Traefik/Gitea-CI legacy.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Move `origin` from GitLab to `git.imrnes.team:MythEclipse/TeleUploader` and add Gitea Actions deployment on push to `main` using the existing VPS deploy path.

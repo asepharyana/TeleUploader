@@ -7,6 +7,8 @@
 
 Telegram Bot API rate-limits each bot to approximately 1-2 concurrent uploads. When multiple upload chunks hit the same bot simultaneously, Telegram returns HTTP 429 (Too Many Requests), causing delays of 30-60 seconds per retry. Under Docker push load, these cumulative delays trigger Gitea client timeouts and `500 Internal Server Error`.
 
+> Catatan (2026-08-02): Produksi sekarang port 4000, deploy Nix+systemd di orangevps, Caddy reverse proxy upload.asepharyana.my.id, DB via pgbouncer pool imrnes 100.121.180.82:6432. Docker/Traefik/Gitea-CI legacy.
+
 The current architecture uses a **global PQueue** with `concurrency=N` where each task picks a bot via round-robin (`claimBotIndex()`). This means two concurrent tasks can both land on the same bot index (after wrap-around), causing 429 collisions.
 
 ## Solution: Per-Bot Queue

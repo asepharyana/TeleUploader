@@ -1,5 +1,7 @@
 # Gitea Remote and CI/CD Migration Design
 
+> Catatan (2026-08-02): Produksi sekarang port 4000, deploy Nix+systemd di orangevps, Caddy reverse proxy upload.asepharyana.my.id, DB via pgbouncer pool imrnes 100.121.180.82:6432. Docker/Traefik/Gitea-CI legacy.
+
 ## Goal
 
 Move the repository origin from GitLab to a new Gitea repository and add a Gitea Actions deployment flow that behaves like a GitHub Actions CI/CD pipeline.
