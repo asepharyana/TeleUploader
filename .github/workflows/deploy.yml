@@ -17,7 +17,27 @@ env:
   VPS_USER: ${{ secrets.VPS_USER }}
 
 jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          submodules: false
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install deps
+        run: bun install --frozen-lockfile
+
+      - name: Test
+        run: bun test --preload ./test/helpers/setup-env.ts test/rateLimit.test.ts test/file.test.ts test/health.test.ts test/env.test.ts test/telegram.test.ts test/upload.test.ts test/files.test.ts test/db.test.ts test/bot.test.ts test/bootstrap.test.ts test/swagger.test.ts test/auth.test.ts test/auth-routes.test.ts test/s3-auth.test.ts test/s3-operations.test.ts test/s3-bucket-config.test.ts test/web-api.test.ts test/bot-pool.test.ts
+
   build-and-deploy:
+    needs: test
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
