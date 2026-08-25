@@ -30,7 +30,7 @@
   "devDependencies": {
     "@aws-sdk/client-s3": "^3.1079.0",
     "@biomejs/biome": "^2.4.15",
-    "@types/node": "^25.8.0",
+    "@types/node": "^26.2.0",
     "drizzle-kit": "^0.31.10",
     "husky": "^9.1.7",
     "typescript": "^6.0.3"
