@@ -257,16 +257,22 @@ describe('S3 Object Stream Timeouts', () => {
 
 describe('S3 Route Rate Limiting', () => {
   /**
-   * Verifies that S3 routes in the route table are rate-limited.
+   * S3 routes are intentionally NOT wrapped in withRateLimit: Docker registry
+   * clients retry on 5xx but abort on 4xx, so a 429 would break blob pushes.
+   * This asserts that the S3 dispatch path bypasses the rate limiter.
    */
-  it('applies rate limiting to S3 root routes', async () => {
+  it('dispatches S3 requests without rate-limiting (direct path)', async () => {
     const source = await Bun.file('src/interfaces/http/routes/index.ts').text();
 
-    // The route definitions for S3 should use withRateLimit
-    expect(source).toContain('handleS3WithRateLimit');
+    // The S3 dispatcher intentionally bypasses the rate limiter.
+    expect(source).toContain('handleS3Direct');
+    expect(source).toContain('return handleS3Request(req, getS3RouteBucket(req));');
 
-    // The rate limit function should be imported
-    expect(source).toContain('withRateLimit');
+    // Non-S3 self-service routes ARE rate-limited (multipart-free /api/upload
+    // and file redirect/info). This proves withRateLimit is applied to the
+    // web routes while S3 dispatch stays direct.
+    expect(source).toContain('withRateLimit(handleUpload)');
+    expect(source).toContain('withRateLimit(handleFileRedirect)');
   });
 });
 
@@ -390,7 +396,7 @@ describe('S3 File Size Limits', () => {
    * Verifies that the S3 config has proper size limits for Docker usage.
    */
   it('has appropriate size limits for Docker layer blobs', async () => {
-    const { config } = await import('../src/config/index.ts');
+    const { config } = await import('../src/env');
 
     // Docker layers can be multiple GB
     expect(config.maxRequestBodyBytes).toBeGreaterThanOrEqual(500 * 1024 * 1024);
