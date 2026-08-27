@@ -702,15 +702,21 @@ const handleGetMultipartObject = async (
   }
 
   const sources: ObjectPartSource[] = [];
-  for (const part of parts) {
-    const fileInfo = await botPool.getFileInfo(part.telegramFileId);
-    sources.push({
-      telegramFileId: part.telegramFileId,
-      telegramUrl: `https://api.telegram.org/file/bot${fileInfo.bot_token}/${fileInfo.file_path}`,
-      sizeBytes: part.sizeBytes,
-      partNumber: part.partNumber,
-    });
-  }
+  // Resolve all part CDN URLs concurrently (independent getFile calls) so
+  // assembly latency is ~1 round-trip instead of N.
+  sources.push(
+    ...(await Promise.all(
+      parts.map(async (part) => {
+        const fileInfo = await botPool.getFileInfo(part.telegramFileId);
+        return {
+          telegramFileId: part.telegramFileId,
+          telegramUrl: `https://api.telegram.org/file/bot${fileInfo.bot_token}/${fileInfo.file_path}`,
+          sizeBytes: part.sizeBytes,
+          partNumber: part.partNumber,
+        };
+      }),
+    )),
+  );
 
   // H1: Always proxy — never expose bot token in redirect URL
 
@@ -1479,9 +1485,13 @@ const handleUploadPart = async (
       hasher.update(chunk);
       writer.write(chunk);
     }
-    writer.end();
+    await writer.end();
   } catch (error) {
-    writer.end();
+    try {
+      writer.end();
+    } catch {
+      // ignore during error path
+    }
     await cleanupTempFile(tempPath);
     throw error;
   } finally {

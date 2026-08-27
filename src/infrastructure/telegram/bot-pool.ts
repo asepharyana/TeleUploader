@@ -7,6 +7,7 @@ import type {
 } from '../../domain/ports/telegram-service';
 import { config } from '../../env';
 import logger from '../../shared/logger/index';
+import { fileInfoCache } from '../cache/index';
 import {
   buildSendPayload,
   extractUploadedFile,
@@ -259,18 +260,31 @@ export class BotPool implements ITelegramService {
   }
 
   async getFileInfo(telegramFileId: string): Promise<TelegramFileInfo> {
+    // Telegram file_id → file_path mapping is stable for the lifetime of the
+    // file. Cache it to avoid a Telegram API round-trip on every S3 GET / HEAD
+    // of the same object. TTL 1h; a cached (possibly stale) file_path would
+    // only surface if Telegram recycles a file_id, which it does not for
+    // documents we own.
+    const cacheKey = `file_info_${telegramFileId}`;
+    const cached = fileInfoCache.get(cacheKey) as TelegramFileInfo | null;
+    if (cached) {
+      return cached;
+    }
+
     let lastError: unknown;
     for (const bot of this.bots) {
       for (let retry = 0; retry <= MAX_TRANSIENT_RETRIES; retry++) {
         try {
           const result = await bot.instance.telegram.getFile(telegramFileId);
           const fileData = result as unknown as Omit<TelegramFileInfo, 'bot_token'>;
-          return {
+          const fileInfo: TelegramFileInfo = {
             file_size: fileData.file_size || 0,
             mime_type: fileData.mime_type || 'application/octet-stream',
             file_path: fileData.file_path || '',
             bot_token: bot.token,
           };
+          fileInfoCache.set(cacheKey, fileInfo);
+          return fileInfo;
         } catch (error: unknown) {
           lastError = error;
           const errorStr = error instanceof Error ? error.message : String(error);

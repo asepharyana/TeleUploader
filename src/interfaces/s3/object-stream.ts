@@ -97,12 +97,53 @@ const fetchPartBody = async (planned: PlannedPart): Promise<ReadableStream<Uint8
   return streamFromBytes(bytes.slice(planned.relativeStart, planned.relativeEnd + 1));
 };
 
+/**
+ * Maximum number of Telegram CDN part fetches run concurrently while
+ * assembling a chunked/multipart object response.
+ *
+ * Part fetches are initiated in parallel (bounded by this constant) to avoid
+ * serializing N sequential network round-trips on the Telegram CDN, then the
+ * results are fanned-in to the response stream in part-number order so the
+ * object bytes remain correctly ordered.
+ */
+const PART_FETCH_CONCURRENCY = 6;
+
+/**
+ * Runs an async mapper over the parts with bounded concurrency, returning the
+ * results in the same order as the input. Each worker claims the next not-yet-
+ * claimed index, so array slots are filled by exactly one worker each.
+ */
+const mapBounded = async <T, R>(
+  items: T[],
+  limit: number,
+  fn: (item: T, index: number) => Promise<R>,
+): Promise<R[]> => {
+  const results: R[] = new Array(items.length);
+  let next = 0;
+
+  const worker = async (): Promise<void> => {
+    while (true) {
+      const idx = next++;
+      if (idx >= items.length) return;
+      results[idx] = await fn(items[idx], idx);
+    }
+  };
+
+  const workers = Array.from({ length: Math.max(1, Math.min(limit, items.length)) }, worker);
+  await Promise.all(workers);
+  return results;
+};
+
 const concatPartStreams = (plannedParts: PlannedPart[]): ReadableStream<Uint8Array> =>
   new ReadableStream<Uint8Array>({
     async start(controller) {
       try {
-        for (const planned of plannedParts) {
-          const stream = await fetchPartBody(planned);
+        // Fetch every part body concurrently (bounded) so the slowest Telegram
+        // CDN fetch dictates latency instead of the sum of all fetches.
+        const partStreams = await mapBounded(plannedParts, PART_FETCH_CONCURRENCY, fetchPartBody);
+
+        // Fan-in in part order — object bytes stay correctly ordered.
+        for (const stream of partStreams) {
           const reader = stream.getReader();
           while (true) {
             const { value, done } = await reader.read();

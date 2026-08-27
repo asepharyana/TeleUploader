@@ -229,21 +229,27 @@ export class ChunkedStorage {
    */
   async buildChunkedObjectSources(file: FileEntity): Promise<ObjectPartSource[]> {
     const parts = await this.filePartRepository.listByFileId(file.id);
-    const sources: ObjectPartSource[] = [];
 
-    for (const part of parts) {
-      const fileInfo = await this.telegramService.getFileInfo(part.telegramFileId);
-      sources.push({
-        telegramFileId: part.telegramFileId,
-        telegramUrl: `https://api.telegram.org/file/bot${fileInfo.bot_token}/${fileInfo.file_path}`,
-        sizeBytes: part.sizeBytes,
-        storedSizeBytes: part.storedSizeBytes,
-        compressionAlgorithm: part.compressionAlgorithm,
-        partNumber: part.partNumber,
-      });
-    }
+    // Resolve every part's Telegram CDN URL concurrently (each is an independent
+    // getFile call) so total resolution time is ~1 round-trip, not N.
+    const partInfos = await Promise.all(
+      parts.map(async (part) => {
+        const fileInfo = await this.telegramService.getFileInfo(part.telegramFileId);
+        return {
+          part,
+          url: `https://api.telegram.org/file/bot${fileInfo.bot_token}/${fileInfo.file_path}`,
+        };
+      }),
+    );
 
-    return sources;
+    return partInfos.map(({ part, url }) => ({
+      telegramFileId: part.telegramFileId,
+      telegramUrl: url,
+      sizeBytes: part.sizeBytes,
+      storedSizeBytes: part.storedSizeBytes,
+      compressionAlgorithm: part.compressionAlgorithm,
+      partNumber: part.partNumber,
+    }));
   }
 
   /**
