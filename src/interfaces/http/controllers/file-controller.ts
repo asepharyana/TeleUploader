@@ -106,7 +106,12 @@ export const handleFileRedirect = async (req: RequestWithParams): Promise<Respon
         return fail(501, 'Archive entry extraction is not supported for chunked files');
       }
       const range = { type: 'none' as const };
-      return chunkedStorage.createChunkedObjectResponse({ file, range, reqId: '' });
+      const resp = await chunkedStorage.createChunkedObjectResponse({ file, range, reqId: '' });
+      // Ensure CORS so browser fetch/XHR playback works for chunked files too.
+      const h = new Headers(resp.headers);
+      if (!h.has('Access-Control-Allow-Origin')) h.set('Access-Control-Allow-Origin', '*');
+      h.set('Access-Control-Expose-Headers', 'Content-Disposition, Content-Length, Accept-Ranges');
+      return new Response(resp.body, { status: resp.status, headers: h });
     }
 
     const archiveEntryName = file.archiveEntryName;
@@ -150,19 +155,70 @@ export const handleFileRedirect = async (req: RequestWithParams): Promise<Respon
           'Content-Type': file.mimeType || 'application/octet-stream',
           'Content-Disposition': `attachment; filename="${sanitizeFilenameHeader(file.fileName)}"`,
           'Content-Length': String(loc.length),
+          'Access-Control-Allow-Origin': '*',
+          'Access-Control-Expose-Headers': 'Content-Disposition, Content-Length, Accept-Ranges',
         },
       });
     }
 
     const fileInfo = await getTelegramFileInfo(file.telegramFileId, publicId);
-    const redirectUrl = buildTelegramFileUrl(fileInfo.file_path, fileInfo.bot_token);
+    const telegramUrl = buildTelegramFileUrl(fileInfo.file_path, fileInfo.bot_token);
 
-    return new Response(null, {
-      status: 302,
-      headers: {
-        Location: redirectUrl,
-      },
-    });
+    // CORS headers shared across all delivery modes — public file CDN.
+    const corsHeaders: Record<string, string> = {
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Expose-Headers': 'Content-Disposition, Content-Length, Accept-Ranges',
+      'Access-Control-Allow-Methods': 'GET, HEAD, OPTIONS',
+      'Access-Control-Allow-Headers': 'Range, Content-Type',
+      Vary: 'Origin',
+    };
+
+    try {
+      const upstream = await fetch(telegramUrl);
+      if (!upstream.ok) {
+        logger.error('Telegram file download failed', {
+          publicId,
+          status: upstream.status,
+        });
+        return Response.json(
+          { error: 'Upstream download failed' },
+          {
+            status: upstream.status === 404 ? 404 : 502,
+            headers: corsHeaders,
+          },
+        );
+      }
+
+      const upstreamHeaders = new Headers(upstream.headers);
+      const contentType =
+        file.mimeType || upstreamHeaders.get('content-type') || 'application/octet-stream';
+      const headers = {
+        'Content-Type': contentType,
+        'Content-Disposition': `inline; filename="${sanitizeFilenameHeader(file.fileName)}"`,
+        'Content-Length': String(file.sizeBytes ?? 0),
+        'Cache-Control': 'public, max-age=300',
+        ...corsHeaders,
+      };
+
+      // Stream the Telegram CDN body back to the client (no cross-origin hop
+      // in the browser → no CORS block for fetch/XHR audio playback).
+      return new Response(upstream.body, {
+        status: 200,
+        headers,
+      });
+    } catch (error: unknown) {
+      logger.error('Telegram file proxy error', {
+        publicId,
+        error: getErrorMessage(error),
+      });
+      return Response.json(
+        { error: 'Upstream download failed' },
+        {
+          status: 502,
+          headers: corsHeaders,
+        },
+      );
+    }
   } catch (error: unknown) {
     logger.error('File redirect error', { publicId, error: getErrorMessage(error) });
     return fail(500, 'Server error');
