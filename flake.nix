@@ -61,6 +61,9 @@
             cp -r dist $out/share/teleuploader/dist
             cp src/home.html $out/share/teleuploader/ 2>/dev/null || true
             cp schema.sql $out/share/teleuploader/ 2>/dev/null || true
+            # Carry package.json into the store so runtime version lookup in
+            # env.ts readPackageVersion() resolves (dist/../package.json).
+            cp package.json $out/share/teleuploader/package.json
 
             # Wrap with bun from Nix store (dependency sharing!)
             # Note: NO --chdir — systemd WorkingDirectory controls this

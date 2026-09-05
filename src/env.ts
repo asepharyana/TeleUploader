@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import logger from './shared/logger/index';
 import { TELEGRAM_CHUNK_SIZE_MAX_BYTES } from './shared/utils/validation';
 
@@ -143,25 +144,23 @@ if (telegramChunkSizeBytes > TELEGRAM_CHUNK_SIZE_MAX_BYTES) {
  * value always matches the deployed build.
  */
 const readPackageVersion = (): string => {
-  try {
-    const candidates = [
-      // node_modules resolution is only available when installed as a dep
-      import.meta.dir ? `${import.meta.dir}/../package.json` : undefined,
-      `${process.cwd()}/package.json`,
-    ];
-    for (const candidate of candidates) {
-      if (!candidate) continue;
-      try {
-        const pkg = JSON.parse(import.meta.require(candidate).default ?? '{}') as {
-          version?: string;
-        };
-        if (pkg.version) return pkg.version;
-      } catch {
-        // try next candidate
-      }
+  // Candidates in priority order. In the Nix bundle the app lives at
+  // $out/share/teleuploader/dist/index.js, so the package.json that was
+  // copied alongside it is one level up from import.meta.dir. In a dev
+  // checkout it sits in the repo root (process.cwd()). Bun bundles JSON
+  // imports statically, so we read the file at runtime instead.
+  const candidates = [
+    import.meta.dir ? `${import.meta.dir}/../package.json` : undefined,
+    `${process.cwd()}/package.json`,
+  ];
+  for (const candidate of candidates) {
+    if (!candidate) continue;
+    try {
+      const parsed = JSON.parse(readFileSync(candidate, 'utf8')) as { version?: string };
+      if (parsed.version) return parsed.version;
+    } catch {
+      // try next candidate
     }
-  } catch {
-    // fall through
   }
   return '0.0.0';
 };
