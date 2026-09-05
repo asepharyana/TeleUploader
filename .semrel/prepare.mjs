@@ -12,6 +12,11 @@
  * while the VPS profile stayed on the old build. By bumping flake.nix's
  * `version` on every release, the Nix derivation always changes and the
  * store path is always fresh.
+ *
+ * IMPORTANT: only bump the TeleUploader package version (the block whose
+ * `pname = "teleuploader"` precedes it), never the Bun overlay version that
+ * appears earlier in the file. Store path is derived from the
+ * teleuploader package's `version`.
  */
 import { readFileSync, writeFileSync } from 'node:fs';
 
@@ -27,9 +32,22 @@ writeFileSync(pkgPath, `${JSON.stringify(pkg, null, 2)}\n`);
 const flakePath = 'flake.nix';
 let flake = readFileSync(flakePath, 'utf8');
 const target = nextVersion ?? pkg.version;
-const replaced = flake.replace(/version = "\d+\.\d+\.\d+";/, `version = "${target}";`);
+
+const anchor = 'pname = "teleuploader";';
+const anchorIdx = flake.indexOf(anchor);
+if (anchorIdx === -1) {
+  throw new Error(`prepare.mjs: TeleUploader pname anchor not found in ${flakePath}`);
+}
+const rest = flake.slice(anchorIdx);
+const verMatch = rest.match(/(\s*)version = "\d+\.\d+\.\d+";/);
+if (!verMatch) {
+  throw new Error(`prepare.mjs: could not locate TeleUploader version block in ${flakePath}`);
+}
+const replaced =
+  flake.slice(0, anchorIdx) +
+  rest.replace(/(\s*)version = "\d+\.\d+\.\d+";/, `$1version = "${target}";`);
 if (!replaced.includes(`version = "${target}";`)) {
-  throw new Error(`prepare.mjs: could not update version in ${flakePath} (pattern not found)`);
+  throw new Error(`prepare.mjs: replacement did not land in ${flakePath}`);
 }
 writeFileSync(flakePath, replaced);
 

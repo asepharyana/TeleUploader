@@ -14,7 +14,7 @@
           overlays = [
             (self: super: {
               bun = super.bun.overrideAttrs (old: rec {
-                version = "1.2.0";
+                version = "1.3.14";
                 src = super.fetchzip {
                   url = "https://github.com/oven-sh/bun/releases/download/bun-v1.3.14/bun-linux-x64.zip";
                   sha256 = "sha256:189kasncnfpq6q37q3w80dv2a92w79w20x2x6hf1fbkir5gyvzlb";
@@ -27,7 +27,7 @@
         # TeleUploader package
         teleuploader = pkgs.stdenvNoCC.mkDerivation rec {
           pname = "teleuploader";
-          version = "1.1.1";
+          version = "1.2.0";
 
           src = ./.;
 
