@@ -12,7 +12,8 @@
     [
       "@semantic-release/exec",
       {
-        "prepareCmd": "node ./.semrel/prepare.mjs '${nextRelease.version}' && bunx biome check package.json flake.nix CHANGELOG.md 2>/dev/null || true"
+        "prepareCmd": "node ./.semrel/prepare.mjs '${nextRelease.version}' && bunx biome check package.json flake.nix CHANGELOG.md 2>/dev/null || true",
+        "successCmd": "node ./.semrel/dispatch.mjs '${nextRelease.version}'"
       }
     ],
     [
