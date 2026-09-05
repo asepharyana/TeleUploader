@@ -1,0 +1,6 @@
+# [1.2.0](https://github.com/asepharyana/TeleUploader/compare/v1.1.1...v1.2.0) (2026-09-05)
+
+
+### Features
+
+* **health:** expose app version in /health response ([0782d0f](https://github.com/asepharyana/TeleUploader/commit/0782d0f993a033bb9d84fa1f876e29486751889d))
