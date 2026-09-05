@@ -1,4 +1,5 @@
 import { sql } from 'drizzle-orm';
+import { config } from '../../../env';
 import { db } from '../../../infrastructure/persistence/drizzle/index';
 import logger from '../../../shared/logger/index';
 import { getErrorMessage } from '../../../shared/utils/file';
@@ -16,7 +17,7 @@ import { getErrorMessage } from '../../../shared/utils/file';
 export const handleHealth = async (_req: Request): Promise<Response> => {
   try {
     await db.execute(sql`SELECT 1`);
-    return Response.json({ status: 'ok' }, { status: 200 });
+    return Response.json({ status: 'ok', version: config.appVersion }, { status: 200 });
   } catch (error: unknown) {
     const message = getErrorMessage(error);
     logger.error('Health check failed', { error: message });

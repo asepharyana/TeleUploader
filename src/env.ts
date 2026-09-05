@@ -2,6 +2,8 @@ import logger from './shared/logger/index';
 import { TELEGRAM_CHUNK_SIZE_MAX_BYTES } from './shared/utils/validation';
 
 interface AppConfig {
+  /** Application version (read from package.json, kept in sync by semantic-release prepare.mjs) */
+  appVersion: string;
   /** All bot tokens merged from BOT_TOKENS (or BOT_TOKEN + ADDITIONAL_BOT_TOKENS fallback) */
   botTokens: string[];
   /** Per-bot concurrency for Telegram API calls (default 1). */
@@ -131,7 +133,41 @@ if (telegramChunkSizeBytes > TELEGRAM_CHUNK_SIZE_MAX_BYTES) {
   );
 }
 
+/**
+ * Reads the application version from package.json.
+ *
+ * Prefers the resolved node_modules/teleuploader package version (set by
+ * semantic-release when the repo is installed as a published artifact) and
+ * falls back to reading the repo's own package.json when running from a
+ * checkout. Both files are updated by prepare.mjs on every release, so the
+ * value always matches the deployed build.
+ */
+const readPackageVersion = (): string => {
+  try {
+    const candidates = [
+      // node_modules resolution is only available when installed as a dep
+      import.meta.dir ? `${import.meta.dir}/../package.json` : undefined,
+      `${process.cwd()}/package.json`,
+    ];
+    for (const candidate of candidates) {
+      if (!candidate) continue;
+      try {
+        const pkg = JSON.parse(import.meta.require(candidate).default ?? '{}') as {
+          version?: string;
+        };
+        if (pkg.version) return pkg.version;
+      } catch {
+        // try next candidate
+      }
+    }
+  } catch {
+    // fall through
+  }
+  return '0.0.0';
+};
+
 export const config: AppConfig = {
+  appVersion: readPackageVersion(),
   botTokens: parseTokens(botTokensRaw),
   telegramBotConcurrency: parseNumber(process.env.TELEGRAM_BOT_CONCURRENCY, 1),
   storageChatId: parseInt(process.env.STORAGE_CHANNEL_ID!, 10),
