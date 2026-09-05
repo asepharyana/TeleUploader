@@ -1,3 +1,10 @@
+## [1.2.1](https://github.com/asepharyana/TeleUploader/compare/v1.2.0...v1.2.1) (2026-09-05)
+
+
+### Bug Fixes
+
+* **ci:** bump only TeleUploader flake version, not Bun overlay ([f442797](https://github.com/asepharyana/TeleUploader/commit/f442797a86e845853c28dc22432a530560434488))
+
 # [1.2.0](https://github.com/asepharyana/TeleUploader/compare/v1.1.1...v1.2.0) (2026-09-05)
 
 
