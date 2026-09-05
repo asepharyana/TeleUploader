@@ -23,10 +23,16 @@ export const maybeCompressChunk = (
     return { bytes: chunk, compressionAlgorithm: null };
   }
 
-  const gzipped = Bun.gzipSync(chunk);
+  const gzipped = Bun.gzipSync(chunk as Uint8Array<ArrayBuffer>);
   if (gzipped.byteLength >= chunk.byteLength) {
     return { bytes: chunk, compressionAlgorithm: null };
   }
 
-  return { bytes: gzipped, compressionAlgorithm: 'gzip' };
+  // CRITICAL: Bun.gzipSync returns a plain Uint8Array, NOT a Buffer.
+  // Telegraf (telegram.sendDocument) only recognises Buffer/Blob/stream
+  // sources as file uploads — a plain Uint8Array yields an empty multipart
+  // body and Telegram rejects with "400: there is no document in the request".
+  // Wrap in Buffer.from(...) so chunked uploads of compressible files (MP4,
+  // zip, text, etc.) actually work.
+  return { bytes: Buffer.from(gzipped), compressionAlgorithm: 'gzip' };
 };
