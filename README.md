@@ -53,3 +53,16 @@ Ini berarti URL service Anda fix, bukan jaminan file Telegram abadi.
 ## Testing
 
 Gunakan bot Telegram untuk upload, atau upload API langsung via HTTP.
+
+## Versioning
+
+This repository uses auto semantic versioning via [semantic-release](https://github.com/semantic-release/semantic-release):
+
+- `fix(...)` commits → patch bump (v1.1.1 → v1.1.2)
+- `feat(...)` commits → minor bump (v1.2.0)
+- breaking changes → major bump (v2.0.0)
+- `chore/ci/docs/refactor/test` commits → no release
+
+On every release, `prepare.mjs` syncs the version across `package.json` and
+`flake.nix`, guaranteeing a fresh Nix store path and true auto-deploy via
+the `Build & Deploy (Nix)` workflow.
