@@ -144,7 +144,9 @@ describe('S3 Streaming Upload Safety', () => {
    * by checking the module source code.
    */
   it('uses streaming instead of req.arrayBuffer() for PUT body', async () => {
-    const source = await Bun.file('src/interfaces/http/controllers/s3-controller.ts').text();
+    // PUT handler lives in s3-object-write.ts since the Fase 1 split
+    // (s3-controller.ts is now a thin facade re-exporting the router).
+    const source = await Bun.file('src/interfaces/http/controllers/s3/s3-object-write.ts').text();
 
     const codeLines = source.split('\n').filter((l) => !l.trim().startsWith('*'));
     const codeText = codeLines.join('\n');
@@ -170,7 +172,10 @@ describe('S3 UploadPart Streaming', () => {
    * req.arrayBuffer().
    */
   it('streams part body instead of req.arrayBuffer()', async () => {
-    const source = await Bun.file('src/interfaces/http/controllers/s3-controller.ts').text();
+    // UploadPart handler lives in s3-multipart-handlers.ts since the Fase 1 split.
+    const source = await Bun.file(
+      'src/interfaces/http/controllers/s3/s3-multipart-handlers.ts',
+    ).text();
 
     // Find the handleUploadPart function
     const uploadPartSection =
