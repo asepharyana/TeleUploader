@@ -24,7 +24,7 @@ describe('Health Route Handler', () => {
 
     expect(res.status).toBe(200);
     const body = await res.json();
-    expect(body).toEqual({ status: 'ok' });
+    expect(body).toEqual({ status: 'ok', version: '1.2.2' });
     expect(mockExecute).toHaveBeenCalled();
   });
 

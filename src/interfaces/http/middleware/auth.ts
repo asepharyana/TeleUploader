@@ -1,5 +1,6 @@
-import { createHmac, timingSafeEqual } from 'node:crypto';
+import { createHmac } from 'node:crypto';
 import { config } from '../../../env';
+import { timingSafeCompare } from '../../../shared/utils/crypto';
 
 const ADMIN_USERNAME = 'admin';
 const SIGNATURE_SEPARATOR = '.';
@@ -11,17 +12,7 @@ type Handler = (req: Request) => Response | Promise<Response>;
  * Represents an authenticated user session after successful
  * authentication via cookie or bearer token.
  */
-export interface AuthSession {
-  /** The authenticated username (always "admin" in this implementation). */
-  username: string;
-  /**
-   * Expiration date of the session, or `null` for bearer-token
-   * sessions which do not expire at the session level.
-   */
-  expiresAt: Date | null;
-  /** The authentication method used to establish this session. */
-  method: 'cookie' | 'bearer';
-}
+export type { AuthSession } from '../../../application/dto/auth';
 
 /** Options for configuring cookie-based session behaviour. */
 interface CookieOptions {
@@ -64,24 +55,7 @@ const decodePayload = (value: string): string | null => {
  */
 export const isAuthEnabled = (secret = config.adminApiToken): boolean => secret.length > 0;
 
-/**
- * Compares two strings using a timing-safe algorithm to prevent
- * timing side-channel attacks.
- *
- * @param left  - First string to compare.
- * @param right - Second string to compare.
- * @returns `true` when the strings are equal, `false` otherwise.
- */
-export const timingSafeCompare = (left: string, right: string): boolean => {
-  const leftBuffer = Buffer.from(left);
-  const rightBuffer = Buffer.from(right);
-
-  if (leftBuffer.length !== rightBuffer.length) {
-    return false;
-  }
-
-  return timingSafeEqual(leftBuffer, rightBuffer);
-};
+export { timingSafeCompare } from '../../../shared/utils/crypto';
 
 /**
  * Signs an arbitrary payload string with HMAC-SHA256 using the given

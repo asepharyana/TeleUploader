@@ -7,9 +7,6 @@ import { ChunkedStorage } from '../src/infrastructure/telegram/chunked-storage';
  * Tests the real ChunkedStorage class (src/infrastructure/telegram/
  * chunked-storage.ts). uploadFileInTelegramChunks only depends on the injected
  * telegramService, so we stub that and pass no-op repos for the rest.
- *
- * Rewritten from a stale test that imported the old `src/utils/chunked-storage`
- * layout, which no longer exists after the refactor.
  */
 const makeTelegramStub = (): ITelegramService =>
   ({

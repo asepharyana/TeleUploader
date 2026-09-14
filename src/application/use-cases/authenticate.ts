@@ -1,4 +1,4 @@
-import { timingSafeEqual } from 'node:crypto';
+import { timingSafeCompare } from '../../shared/utils/crypto';
 import type {
   AuthSession,
   LoginInput,
@@ -22,24 +22,6 @@ export interface AuthenticateUseCaseDeps {
   /** Application configuration subset. */
   config: AuthUseCaseConfig;
 }
-
-/**
- * Performs a constant-time string comparison to prevent timing attacks.
- *
- * @param left - The first string to compare.
- * @param right - The second string to compare.
- * @returns `true` if the strings are equal, `false` otherwise.
- */
-const timingSafeCompare = (left: string, right: string): boolean => {
-  const leftBuffer = Buffer.from(left);
-  const rightBuffer = Buffer.from(right);
-
-  if (leftBuffer.length !== rightBuffer.length) {
-    return false;
-  }
-
-  return timingSafeEqual(leftBuffer, rightBuffer);
-};
 
 /**
  * Checks whether authentication is enabled based on the configured token.

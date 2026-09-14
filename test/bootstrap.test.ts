@@ -42,7 +42,7 @@ mock.module('../src/interfaces/bot/handler', () => ({
   startBot: mockStartBot,
 }));
 
-mock.module('../src/db/migrate', () => ({
+mock.module('../src/infrastructure/persistence/drizzle/migrate', () => ({
   runMigration: mock(() => Promise.resolve()),
 }));
 
@@ -75,7 +75,7 @@ mock.module('../src/interfaces/http/middleware/auth', () => ({
   requireAuth: mockRequireAuth,
 }));
 
-mock.module('../src/utils/rateLimit', () => ({
+mock.module('../src/interfaces/http/middleware/rate-limit', () => ({
   cleanupRateLimitCache: mock(),
   clearRateLimitCache: mock(),
   checkRateLimit: mock(() => true),
@@ -128,8 +128,21 @@ describe('Bootstrap Server', () => {
     expect(await res.json()).toEqual({ ok: true });
     expect(mockHandleUpload).toHaveBeenCalledTimes(1);
 
-    const webApiRoute = serveCallArgs.routes?.['/api/v1/*'] as { GET: RouteHandler };
-    const protectedRes = await webApiRoute.GET(new Request('http://localhost/api/v1/files'));
+    // GET /api/v1/* is intentionally public (read endpoints need no auth) —
+    // it passes through to the raw handler (stubbed here to 404).
+    const webApiRoute = serveCallArgs.routes?.['/api/v1/*'] as {
+      GET: RouteHandler;
+      POST: RouteHandler;
+    };
+    const publicRes = await webApiRoute.GET(new Request('http://localhost/api/v1/files'));
+
+    expect(publicRes.status).toBe(404);
+    expect(await publicRes.json()).toEqual({ error: 'Not Found' });
+
+    // Write endpoints are auth-guarded — POST goes through requireAuth (401 here).
+    const protectedRes = await webApiRoute.POST(
+      new Request('http://localhost/api/v1/files', { method: 'POST' }),
+    );
 
     expect(protectedRes.status).toBe(401);
     expect(await protectedRes.json()).toEqual({ error: 'Unauthorized' });

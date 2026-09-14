@@ -1,26 +1,4 @@
-import { timingSafeEqual } from 'node:crypto';
-
-/**
- * Timing-safe string comparison that prevents timing attacks.
- *
- * Uses `crypto.timingSafeEqual` which runs in constant time regardless of
- * where the strings differ. Returns false for mismatched-length inputs
- * to avoid leaking length information via early return.
- *
- * @param left - The first string to compare.
- * @param right - The second string to compare.
- * @returns True if both strings are equal.
- */
-const timingSafeCompare = (left: string, right: string): boolean => {
-  const leftBuffer = Buffer.from(left);
-  const rightBuffer = Buffer.from(right);
-
-  if (leftBuffer.length !== rightBuffer.length) {
-    return false;
-  }
-
-  return timingSafeEqual(leftBuffer, rightBuffer);
-};
+import { timingSafeCompare } from '../../shared/utils/crypto';
 
 export interface SigV4Result {
   isValid: boolean;

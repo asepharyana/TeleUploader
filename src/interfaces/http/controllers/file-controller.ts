@@ -4,6 +4,8 @@ import type { TelegramFileInfo } from '../../../domain/ports/telegram-service';
 import { fileInfoCache } from '../../../infrastructure/cache/index';
 import { chunkedStorage, fileRepository } from '../../../infrastructure/di';
 import { botPool } from '../../../infrastructure/telegram/bot-pool';
+import { buildTelegramFileUrl } from '../../../infrastructure/telegram/file-url';
+import { sanitizeFilenameHeader } from '../../../shared/http/filename';
 import logger from '../../../shared/logger/index';
 import { cleanupTempFile, formatCreatedAt, getErrorMessage } from '../../../shared/utils/file';
 import { locateZipEntry } from '../../../shared/utils/zip';
@@ -45,26 +47,6 @@ const getTelegramFileInfo = async (
 
   return fileInfo;
 };
-
-/**
- * Builds a Telegram CDN download URL from a file path and bot token.
- *
- * @param filePath - The Telegram file path returned by getFile.
- * @param botToken - The bot token used to authenticate the download.
- * @returns The full Telegram CDN URL.
- */
-const buildTelegramFileUrl = (filePath: string, botToken: string): string =>
-  `https://api.telegram.org/file/bot${botToken}/${filePath}`;
-
-/**
- * Sanitises a file name for use in a Content-Disposition header, removing
- * characters that could enable header injection.
- *
- * @param fileName - The raw file name.
- * @returns The sanitised file name.
- */
-const sanitizeFilenameHeader = (fileName: string): string =>
-  fileName.replace(/[\\"]/g, '').replace(/[\n\r]/g, '');
 
 /**
  * Returns a JSON error response with the given status code and message.
