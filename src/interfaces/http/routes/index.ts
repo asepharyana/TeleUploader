@@ -1,4 +1,3 @@
-import { handleSwaggerHtml, handleSwaggerJson } from '../../../routes/swagger';
 import { getS3RouteBucket, shouldHandleS3 } from '../../../shared/utils/s3-detection';
 import { handleLogin, handleLogout, handleMe } from '../controllers/auth-controller';
 import { handleFileInfo, handleFileRedirect } from '../controllers/file-controller';
@@ -9,6 +8,7 @@ import { handleUpload } from '../controllers/upload-controller';
 import { handleWebApiV1 } from '../controllers/web-api-controller';
 import { requireAuth } from '../middleware/auth';
 import { withRateLimit } from '../middleware/rate-limit';
+import { handleSwaggerHtml, handleSwaggerJson } from '../swagger';
 
 /**
  * Dispatches an S3 request directly, bypassing rate limiting.
@@ -16,13 +16,47 @@ import { withRateLimit } from '../middleware/rate-limit';
  * S3 API calls (used by Docker registry for blob pushes) must not be
  * rate-limited — large concurrent layer uploads would hit the limit and
  * fail. The Docker registry client retries on 5xx, not 4xx, so a 429
- * would abort the entire push.
+ * would abort the entire push. Do NOT wrap this in withRateLimit.
  *
  * @param req - The incoming S3 request.
  * @returns The S3 response.
  */
 const handleS3Direct = (req: Request): Promise<Response> => {
   return handleS3Request(req, getS3RouteBucket(req));
+};
+
+/**
+ * Generic CORS preflight for non-S3 API requests.
+ *
+ * S3 preflights are answered by the S3 controller (S3 XML CORS headers);
+ * anything else (dashboard fetches, future API endpoints) gets a plain
+ * permissive 204 so browsers can proceed.
+ *
+ * @returns A 204 No Content Response with permissive CORS headers.
+ */
+const apiOptionsResponse = (): Response =>
+  new Response(null, {
+    status: 204,
+    headers: {
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Methods': 'GET, PUT, HEAD, DELETE, POST, PATCH, OPTIONS',
+      'Access-Control-Allow-Headers':
+        'Authorization, Content-Type, X-Amz-Date, X-Amz-Content-Sha256',
+    },
+  });
+
+/**
+ * Handles an OPTIONS request on the catch-all route.
+ *
+ * S3 clients preflight with SigV4 headers — those go to the S3 handler.
+ * Anything else is a generic API preflight and gets a plain 204.
+ *
+ * @param req - The incoming OPTIONS request.
+ * @returns The S3 or generic CORS preflight response.
+ */
+const handleCatchAllOptions = (req: Request): Promise<Response> => {
+  if (shouldHandleS3(req, Object.fromEntries(req.headers))) return handleS3Direct(req);
+  return Promise.resolve(apiOptionsResponse());
 };
 
 /**
@@ -58,7 +92,7 @@ export const routes = {
   },
   '/': {
     GET: (req: Request): Promise<Response> => {
-      if (shouldHandleS3(req)) return handleS3Direct(req);
+      if (shouldHandleS3(req, Object.fromEntries(req.headers))) return handleS3Direct(req);
       return handleHome();
     },
     PUT: (req: Request): Promise<Response> => {
@@ -69,7 +103,7 @@ export const routes = {
     HEAD: handleS3Direct,
     DELETE: handleS3Direct,
     POST: handleS3Direct,
-    OPTIONS: handleS3Direct,
+    OPTIONS: handleCatchAllOptions,
   },
   // Catch-all for S3 path-style requests (/{bucket}/{key} ...)
   // Only intercepts requests with S3 auth headers; others get 404.
@@ -98,7 +132,7 @@ export const routes = {
       if (shouldHandleS3(req, Object.fromEntries(req.headers))) return handleS3Direct(req);
       return Promise.resolve(new Response('Not Found', { status: 404 }));
     },
-    OPTIONS: handleS3Direct,
+    OPTIONS: handleCatchAllOptions,
   },
   '/api/v1/auth/login': {
     POST: withRateLimit(handleLogin),

@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs';
 import logger from './shared/logger/index';
 import { TELEGRAM_CHUNK_SIZE_MAX_BYTES } from './shared/utils/validation';
+import { PositiveIntSchema } from './shared/validation/schemas';
 
 interface AppConfig {
   /** Application version (read from package.json, kept in sync by semantic-release prepare.mjs) */
@@ -88,6 +89,27 @@ const parseNumber = (value: string | undefined, fallback: number): number => {
   return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
 };
 
+/**
+ * Parses the PORT env var with fail-fast validation.
+ *
+ * Defaults to 4000 ONLY when the variable is absent or empty. A present but
+ * invalid value ('abc', '-5', '0') throws so the service refuses to start
+ * misconfigured instead of silently listening on the wrong port.
+ *
+ * @param value - The raw `PORT` env var value.
+ * @returns The validated port number.
+ * @throws {Error} When the value is present but not a positive integer.
+ */
+const parsePort = (value: string | undefined): number => {
+  if (value === undefined || value === '') return 4000;
+  const parsed = PositiveIntSchema.safeParse(value);
+  if (!parsed.success) {
+    logger.error(`Invalid PORT value: ${JSON.stringify(value)} — PORT must be a positive integer`);
+    throw new Error('PORT must be a positive integer');
+  }
+  return parsed.data;
+};
+
 const parseTokens = (value: string | undefined): string[] =>
   (value || '')
     .split(',')
@@ -172,7 +194,7 @@ export const config: AppConfig = {
   storageChatId: parseInt(process.env.STORAGE_CHANNEL_ID!, 10),
   baseUrl: process.env.BASE_URL!,
   databaseUrl: process.env.DATABASE_URL!,
-  port: parseInt(process.env.PORT!, 10) || 4000,
+  port: parsePort(process.env.PORT),
   nodeEnv: process.env.NODE_ENV || 'development',
   logLevel: process.env.LOG_LEVEL || 'info',
   rateLimitWindowMs: parseNumber(process.env.RATE_LIMIT_WINDOW_MS, 60000),
@@ -197,7 +219,9 @@ export const config: AppConfig = {
   ),
 };
 
-logger.info('Environment variables loaded', {
+// Debug-level: every import of env.ts would otherwise dump the full config
+// (secrets masked, but still one noisy line per test file) to the log stream.
+logger.debug('Environment variables loaded', {
   config: {
     ...config,
     botTokens: config.botTokens.map(maskSecret),

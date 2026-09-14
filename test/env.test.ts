@@ -32,6 +32,29 @@ describe('Environment Variables Validation', () => {
     expect(typeof config.port).toBe('number');
   });
 
+  it('startup fails fast when PORT is present but invalid', async () => {
+    for (const badPort of ['abc', '-5', '0']) {
+      const proc = Bun.spawn({
+        cmd: ['bun', '-e', "import('./src/env')"],
+        cwd: `${import.meta.dir}/..`,
+        env: {
+          ...process.env,
+          BOT_TOKENS: '123456:ABC-DEF',
+          STORAGE_CHANNEL_ID: '-1001234567890',
+          BASE_URL: 'https://example.com',
+          DATABASE_URL: 'postgresql://asephs:***@100.121.180.82:6432/test',
+          PORT: badPort,
+        },
+        stdout: 'pipe',
+        stderr: 'pipe',
+      });
+      const exitCode = await proc.exited;
+      const stderr = await new Response(proc.stderr).text();
+      expect(exitCode).not.toBe(0);
+      expect(stderr).toContain('PORT must be a positive integer');
+    }
+  });
+
   it("nodeEnv should be 'test' or 'development'", () => {
     expect(['test', 'development']).toContain(config.nodeEnv);
   });
