@@ -1,5 +1,6 @@
 # dependencies (bun install)
 node_modules
+package-lock.json
 
 # output
 out
@@ -37,3 +38,32 @@ S3_GUIDE.md
 # Finder (MacOS) folder config
 .DS_Store
 result
+
+# Ruflo / Claude Flow local state (scaffolding kept on disk, never committed)
+# Secrets & configs with credentials
+claude-flow.config.json
+claude-flow.config.json.bak
+.env.*.local
+
+# Runtime data & databases
+*.db
+*.db-shm
+*.db-wal
+ruvector.db
+data/
+.swarm/
+.claude-flow/
+.claude/*.db
+.claude/.proven-config-version
+.claude/proven-config.json
+
+# Generated scaffolding (re-creatable via ruflo init; force-add if you want it tracked)
+.agents/
+AGENTS.md
+.claude/agents/
+.claude/commands/
+.claude/helpers/
+.claude/skills/
+
+# Codex local configuration
+.codex/
