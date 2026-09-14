@@ -31,7 +31,7 @@ const mapRowToFilePart = (row: Record<string, unknown>): FilePart => ({
 /**
  * Drizzle-backed implementation of {@link IFilePartRepository}.
  *
- * Delegates to the same SQL queries as the original `src/db/file-parts.ts`
+ * Delegates to the same SQL queries as the original `infrastructure/persistence/repositories/file-part-repository.ts`
  * module, using raw SQL for all operations.
  */
 export class DrizzleFilePartRepository implements IFilePartRepository {

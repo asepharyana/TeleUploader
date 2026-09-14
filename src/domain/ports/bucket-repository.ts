@@ -3,7 +3,7 @@ import type { Bucket } from '../entities/bucket';
 /**
  * Repository interface for Bucket entity persistence.
  *
- * Abstracts the bucket CRUD operations currently in `src/db/buckets.ts`.
+ * Abstracts the bucket CRUD operations currently in `infrastructure/persistence/repositories/bucket-repository.ts`.
  */
 export interface IBucketRepository {
   /**

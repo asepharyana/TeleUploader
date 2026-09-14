@@ -15,7 +15,7 @@ export interface S3FileRecord extends File {
  * Repository interface for File entity persistence.
  *
  * Abstracts all file CRUD operations currently spread across
- * `src/db/files.ts` and `src/db/files-ext.ts`.
+ * `infrastructure/persistence/repositories/file-repository.ts` and `infrastructure/persistence/repositories/file-repository.ts`.
  */
 export interface IFileRepository {
   /**

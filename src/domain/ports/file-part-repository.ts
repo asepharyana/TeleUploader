@@ -3,7 +3,7 @@ import type { FilePart, NewFilePart } from '../entities/file-part';
 /**
  * Repository interface for FilePart entity persistence.
  *
- * Abstracts the file-part operations currently in `src/db/file-parts.ts`.
+ * Abstracts the file-part operations currently in `infrastructure/persistence/repositories/file-part-repository.ts`.
  * File parts represent the chunks of a large file stored across multiple
  * Telegram messages for Telegram-safe storage.
  */

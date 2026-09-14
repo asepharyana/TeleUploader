@@ -21,7 +21,7 @@ const mapRowToBucket = (row: Record<string, unknown>): Bucket => ({
 /**
  * Drizzle-backed implementation of {@link IBucketRepository}.
  *
- * Delegates to the same SQL queries as the original `src/db/buckets.ts`
+ * Delegates to the same SQL queries as the original `infrastructure/persistence/repositories/bucket-repository.ts`
  * module, using raw SQL for drizzle tables that are not part of the
  * typed schema.
  */

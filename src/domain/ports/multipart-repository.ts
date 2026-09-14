@@ -3,7 +3,7 @@ import type { MultipartPart, MultipartUpload } from '../entities/multipart';
 /**
  * Repository interface for S3 multipart upload persistence.
  *
- * Abstracts the multipart upload operations currently in `src/db/multipart.ts`.
+ * Abstracts the multipart upload operations currently in `infrastructure/persistence/repositories/multipart-repository.ts`.
  * Manages both multipart upload sessions and their individual parts.
  */
 export interface IMultipartRepository {

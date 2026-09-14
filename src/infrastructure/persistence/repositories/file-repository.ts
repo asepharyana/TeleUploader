@@ -51,8 +51,8 @@ const mapDbRowToS3Record = (row: Record<string, unknown>): S3FileRecord => ({
 /**
  * Drizzle-backed implementation of {@link IFileRepository}.
  *
- * Delegates to the same SQL queries as the original `src/db/files.ts` and
- * `src/db/files-ext.ts` modules while presenting a clean domain interface.
+ * Delegates to the same SQL queries as the original `infrastructure/persistence/repositories/file-repository.ts` and
+ * `infrastructure/persistence/repositories/file-repository.ts` modules while presenting a clean domain interface.
  */
 export class DrizzleFileRepository implements IFileRepository {
   /**

@@ -19,7 +19,7 @@ const mapRowToMultipartUpload = (r: Record<string, unknown>): MultipartUpload =>
 /**
  * Drizzle-backed implementation of {@link IMultipartRepository}.
  *
- * Delegates to the same SQL queries as the original `src/db/multipart.ts`
+ * Delegates to the same SQL queries as the original `infrastructure/persistence/repositories/multipart-repository.ts`
  * module, using raw SQL for all operations on the un-typed
  * `multipart_uploads` and `multipart_parts` tables.
  */
