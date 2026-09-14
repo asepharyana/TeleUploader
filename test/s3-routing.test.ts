@@ -129,4 +129,21 @@ describe('S3 routing (routes table)', () => {
     );
     expect(res.status).toBe(204);
   });
+
+  it('answers HEAD / without S3 headers as 404 (never S3-direct)', async () => {
+    const res = await routes['/'].HEAD(new Request('http://localhost:4000/', { method: 'HEAD' }));
+    expect(res.status).toBe(404);
+  });
+
+  it('answers DELETE / without S3 headers as 404 (never S3-direct)', async () => {
+    const res = await routes['/'].DELETE(
+      new Request('http://localhost:4000/', { method: 'DELETE' }),
+    );
+    expect(res.status).toBe(404);
+  });
+
+  it('answers POST / without S3 headers as 404 (never S3-direct)', async () => {
+    const res = await routes['/'].POST(new Request('http://localhost:4000/', { method: 'POST' }));
+    expect(res.status).toBe(404);
+  });
 });

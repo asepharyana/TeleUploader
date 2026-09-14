@@ -11,6 +11,7 @@ import { sanitizeFilenameHeader } from '../../../shared/http/filename';
 import logger from '../../../shared/logger/index';
 import { getErrorMessage } from '../../../shared/utils/file';
 import { streamToTemp } from '../../../shared/utils/temp-stream';
+import { BucketNameSchema } from '../../../shared/validation/schemas';
 
 /** Lazily built upload use case wired to the DI singletons. */
 const getUploadUseCase = () =>
@@ -80,7 +81,7 @@ export const handleListBucketsV1 = async (): Promise<Response> => {
  */
 export const handleCreateBucketV1 = async (req: Request): Promise<Response> => {
   const body = (await req.json()) as { name?: string };
-  if (!body.name || !/^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$/.test(body.name)) {
+  if (!body.name || !BucketNameSchema.safeParse(body.name).success) {
     return jsonError('Invalid bucket name. Use lowercase, 3-63 chars, no underscore', 400);
   }
   const existing = await bucketRepository.findByName(body.name);

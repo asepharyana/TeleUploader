@@ -100,9 +100,18 @@ export const routes = {
       if (shouldHandleS3(req, headers)) return handleS3Direct(req);
       return Promise.resolve(new Response('Not Allowed', { status: 405 }));
     },
-    HEAD: handleS3Direct,
-    DELETE: handleS3Direct,
-    POST: handleS3Direct,
+    HEAD: (req: Request): Promise<Response> => {
+      if (shouldHandleS3(req, Object.fromEntries(req.headers))) return handleS3Direct(req);
+      return Promise.resolve(new Response('Not Found', { status: 404 }));
+    },
+    DELETE: (req: Request): Promise<Response> => {
+      if (shouldHandleS3(req, Object.fromEntries(req.headers))) return handleS3Direct(req);
+      return Promise.resolve(new Response('Not Found', { status: 404 }));
+    },
+    POST: (req: Request): Promise<Response> => {
+      if (shouldHandleS3(req, Object.fromEntries(req.headers))) return handleS3Direct(req);
+      return Promise.resolve(new Response('Not Found', { status: 404 }));
+    },
     OPTIONS: handleCatchAllOptions,
   },
   // Catch-all for S3 path-style requests (/{bucket}/{key} ...)

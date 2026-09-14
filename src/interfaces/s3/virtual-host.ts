@@ -7,11 +7,13 @@ const stripPort = (host: string): string => {
   return host.split(':')[0].toLowerCase().replace(/\.$/, '');
 };
 
-const isValidBucketLabel = (bucket: string): boolean =>
-  /^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$/.test(bucket) &&
-  !bucket.includes('..') &&
-  !bucket.includes('.-') &&
-  !bucket.includes('-.');
+import { BucketNameSchema } from '../../shared/validation/schemas';
+
+/**
+ * Validates a virtual-hosted bucket label against the single canonical
+ * bucket-name schema (same rules as bucket creation).
+ */
+const isValidBucketLabel = (bucket: string): boolean => BucketNameSchema.safeParse(bucket).success;
 
 export const extractS3BucketFromHost = (host: string, domains: string[]): string | null => {
   const normalizedHost = stripPort(host);
