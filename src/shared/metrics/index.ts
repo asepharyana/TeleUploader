@@ -82,11 +82,16 @@ class MetricsCollector {
         p95: this.calculatePercentile(this.uploadTimes, 95),
         p99: this.calculatePercentile(this.uploadTimes, 99),
       },
+      // Cumulative mean rate since process start (total requests / elapsed
+      // minutes). Intended for the coarse 5-minute ops log in index.ts, not
+      // a sliding-window throughput gauge.
       uploadThroughput: this.totalRequests > 0 ? this.totalRequests / 60 : 0,
-      queueSize: 0, // Will be updated by queue
+      // No upload queue or bot-utilization tracker exists yet — both stay 0
+      // until one is wired in. Kept in the snapshot shape for compatibility.
+      queueSize: 0,
       errorRate,
       cacheHitRate,
-      botUtilization: 0, // Will be updated by bot tracker
+      botUtilization: 0,
       timestamp: Date.now(),
     };
   }

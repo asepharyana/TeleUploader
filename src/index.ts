@@ -49,28 +49,39 @@ const gracefulShutdown = async (signal: string): Promise<void> => {
 process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
 process.on('SIGINT', () => gracefulShutdown('SIGINT'));
 
-// Periodic maintenance intervals
-setInterval(cleanupRateLimitCache, 60000);
-setInterval(
-  () => {
-    const removed = fileInfoCache.cleanup();
-    if (removed > 0) {
-      logger.info(`Cleaned up ${removed} expired cache entries`);
-    }
-  },
-  5 * 60 * 1000,
+// Periodic maintenance intervals. Timers are unref'd so they never keep the
+// process alive on their own (safe no-op where `unref` is unavailable).
+const unref = (timer: unknown): void => {
+  if (typeof timer === 'object' && timer !== null && 'unref' in timer) {
+    (timer as { unref?: () => void }).unref?.();
+  }
+};
+
+unref(setInterval(cleanupRateLimitCache, 60000));
+unref(
+  setInterval(
+    () => {
+      const removed = fileInfoCache.cleanup();
+      if (removed > 0) {
+        logger.info(`Cleaned up ${removed} expired cache entries`);
+      }
+    },
+    5 * 60 * 1000,
+  ),
 );
-setInterval(
-  () => {
-    const snapshot = metricsCollector.getSnapshot();
-    logger.info('Metrics snapshot', {
-      uploadLatency: snapshot.uploadLatency,
-      uploadThroughput: snapshot.uploadThroughput.toFixed(2),
-      errorRate: snapshot.errorRate.toFixed(2),
-      cacheHitRate: snapshot.cacheHitRate.toFixed(2),
-    });
-  },
-  5 * 60 * 1000,
+unref(
+  setInterval(
+    () => {
+      const snapshot = metricsCollector.getSnapshot();
+      logger.info('Metrics snapshot', {
+        uploadLatency: snapshot.uploadLatency,
+        uploadThroughput: snapshot.uploadThroughput.toFixed(2),
+        errorRate: snapshot.errorRate.toFixed(2),
+        cacheHitRate: snapshot.cacheHitRate.toFixed(2),
+      });
+    },
+    5 * 60 * 1000,
+  ),
 );
 
 logger.info('Application running successfully');

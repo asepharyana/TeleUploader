@@ -1,4 +1,4 @@
-import { config } from '../env';
+import { config } from '../../env';
 
 const errorSchema = (example: string) => ({
   type: 'object',
@@ -50,8 +50,9 @@ export const handleSwaggerJson = async (): Promise<Response> => {
     openapi: '3.0.0',
     info: {
       title: 'FileDrop API',
-      version: '1.0.0',
-      description: 'File upload API with stream-based downloads.',
+      version: config.appVersion,
+      description:
+        'File upload API with stream-based downloads, S3-compatible object storage, and admin auth.',
     },
     servers: [
       {
@@ -200,6 +201,156 @@ export const handleSwaggerJson = async (): Promise<Response> => {
             '500': {
               description: 'Internal server error.',
               content: jsonContent(errorSchema('Server error')),
+            },
+          },
+        },
+      },
+      '/api/v1/auth/login': {
+        post: {
+          summary: 'Admin Login',
+          description:
+            'Validates the admin API token and sets a signed session cookie. Returns 404 when auth is disabled.',
+          requestBody: {
+            required: true,
+            content: jsonContent(
+              objectSchema({
+                token: { type: 'string', example: 'admin-secret-token' },
+              }),
+            ),
+          },
+          responses: {
+            '200': {
+              description: 'Login successful; session cookie set.',
+              content: jsonContent(
+                objectSchema({
+                  username: { type: 'string', example: 'admin' },
+                }),
+              ),
+            },
+            '400': {
+              description: 'Token is required.',
+              content: jsonContent(errorSchema('Token is required')),
+            },
+            '401': {
+              description: 'Invalid token.',
+              content: jsonContent(errorSchema('Invalid token')),
+            },
+          },
+        },
+      },
+      '/api/v1/auth/logout': {
+        post: {
+          summary: 'Admin Logout',
+          description: 'Clears the session cookie.',
+          responses: {
+            '200': {
+              description: 'Logout successful.',
+              content: jsonContent(
+                objectSchema({
+                  success: { type: 'boolean', example: true },
+                }),
+              ),
+            },
+          },
+        },
+      },
+      '/api/v1/auth/me': {
+        get: {
+          summary: 'Current User',
+          description:
+            'Returns the authenticated user from the session cookie or bearer token. Returns 404 when auth is disabled.',
+          responses: {
+            '200': {
+              description: 'User info.',
+              content: jsonContent(
+                objectSchema({
+                  username: { type: 'string', example: 'admin' },
+                  expiresAt: {
+                    type: 'string',
+                    format: 'date-time',
+                    nullable: true,
+                    example: '2026-05-18T10:00:00.000Z',
+                  },
+                }),
+              ),
+            },
+            '401': {
+              description: 'Unauthorized.',
+              content: jsonContent(errorSchema('Unauthorized')),
+            },
+          },
+        },
+      },
+      '/api/v1/{path}': {
+        get: {
+          summary: 'Web API (read)',
+          description:
+            'Public read endpoints: list buckets/objects and download files. See the dashboard for the full reference.',
+          responses: {
+            '200': {
+              description: 'Requested resource.',
+            },
+            '404': {
+              description: 'Not found.',
+              content: jsonContent(errorSchema('Not found')),
+            },
+          },
+        },
+      },
+      '/{bucket}': {
+        get: {
+          summary: 'S3 Bucket Operations',
+          description:
+            'S3-compatible bucket endpoint (SigV4 auth). Supports ListObjects, versioning queries, and bucket management. Served without rate limiting so Docker registry pushes are not aborted by 429s.',
+          parameters: [
+            {
+              name: 'bucket',
+              in: 'path',
+              required: true,
+              description: 'Bucket name.',
+              schema: { type: 'string' },
+            },
+          ],
+          responses: {
+            '200': {
+              description: 'S3 XML response.',
+            },
+            '403': {
+              description: 'Signature mismatch.',
+            },
+          },
+        },
+      },
+      '/{bucket}/{key}': {
+        get: {
+          summary: 'S3 Object Operations',
+          description:
+            'S3-compatible object endpoint (SigV4 auth): GetObject, PutObject, DeleteObject, and multipart uploads. Served without rate limiting so Docker registry pushes are not aborted by 429s.',
+          parameters: [
+            {
+              name: 'bucket',
+              in: 'path',
+              required: true,
+              description: 'Bucket name.',
+              schema: { type: 'string' },
+            },
+            {
+              name: 'key',
+              in: 'path',
+              required: true,
+              description: 'Object key.',
+              schema: { type: 'string' },
+            },
+          ],
+          responses: {
+            '200': {
+              description: 'S3 XML or object bytes.',
+            },
+            '403': {
+              description: 'Signature mismatch.',
+            },
+            '404': {
+              description: 'NoSuchBucket / NoSuchKey.',
             },
           },
         },

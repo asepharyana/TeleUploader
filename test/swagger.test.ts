@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'bun:test';
-import { handleSwaggerHtml, handleSwaggerJson } from '../src/routes/swagger';
+import { handleSwaggerHtml, handleSwaggerJson } from '../src/interfaces/http/swagger';
 
 describe('Swagger Documentation Endpoints', () => {
   it('returns OpenAPI specification JSON', async () => {
@@ -34,6 +34,23 @@ describe('Swagger Documentation Endpoints', () => {
     const downloadResponses = downloadPath.get.responses;
     expect(downloadResponses).toHaveProperty('302');
     expect(downloadResponses['302'].description).toContain('Redirect');
+  });
+
+  it('documents auth, web API, and S3 endpoints with the app version', async () => {
+    const res = await handleSwaggerJson();
+    const body = (await res.json()) as {
+      info: { version: string };
+      paths: Record<string, object>;
+    };
+
+    expect(body.paths).toHaveProperty('/api/v1/auth/login');
+    expect(body.paths).toHaveProperty('/api/v1/auth/logout');
+    expect(body.paths).toHaveProperty('/api/v1/auth/me');
+    expect(body.paths).toHaveProperty('/api/v1/{path}');
+    expect(body.paths).toHaveProperty('/{bucket}');
+    expect(body.paths).toHaveProperty('/{bucket}/{key}');
+    expect(typeof body.info.version).toBe('string');
+    expect(body.info.version.length).toBeGreaterThan(0);
   });
 
   it('returns Swagger UI HTML page', async () => {

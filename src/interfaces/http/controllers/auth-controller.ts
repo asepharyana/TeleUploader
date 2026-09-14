@@ -1,12 +1,12 @@
+import type { AuthSession } from '../../../application/dto/auth';
 import {
-  type AuthSession,
   createLoginUseCase,
   createLogoutUseCase,
   createMeUseCase,
 } from '../../../application/use-cases/authenticate';
 import { config } from '../../../env';
+import { LoginBodySchema } from '../../../shared/validation/schemas';
 import {
-  checkBearerToken,
   clearSessionCookie,
   createSessionCookie,
   getAuthSession,
@@ -36,14 +36,17 @@ const notFound = (): Response => json({ error: 'Not found' }, 404);
 /**
  * Parses the login request body, extracting the `token` field.
  *
+ * Validated through {@link LoginBodySchema} (the canonical boundary schema
+ * for `POST /api/v1/auth/login`).
+ *
  * @param req - The incoming HTTP request with a JSON body.
  * @returns The login token payload, or `null` when the body is invalid.
  */
 const readLoginBody = async (req: Request): Promise<{ token: string } | null> => {
   try {
-    const body = (await req.json()) as { token?: unknown };
-    if (typeof body.token !== 'string' || body.token.length === 0) return null;
-    return { token: body.token };
+    const parsed = LoginBodySchema.safeParse(await req.json());
+    if (!parsed.success) return null;
+    return { token: parsed.data.token };
   } catch {
     return null;
   }
@@ -119,8 +122,10 @@ export const handleLogout = async (): Promise<Response> => {
 export const handleMe = async (req: Request): Promise<Response> => {
   if (!isAuthEnabled()) return notFound();
 
+  // getAuthSession already checks the bearer token (cookie first, then
+  // Authorization header) — no second check needed here.
   const session: AuthSession | null = getAuthSession(req);
-  if (!session && !checkBearerToken(req.headers.get('authorization'))) {
+  if (!session) {
     return json({ error: 'Unauthorized' }, 401);
   }
 
@@ -132,13 +137,7 @@ export const handleMe = async (req: Request): Promise<Response> => {
     },
   });
 
-  const activeSession = session ?? {
-    username: 'admin',
-    expiresAt: null,
-    method: 'bearer' as const,
-  };
-
-  const result = await meUseCase(activeSession);
+  const result = await meUseCase(session);
 
   if (!result) {
     return json({ error: 'Unauthorized' }, 401);
