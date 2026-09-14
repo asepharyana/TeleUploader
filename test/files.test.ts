@@ -158,7 +158,7 @@ describe('File Route Handlers', () => {
       expect(body.error).toBe('File not found');
     });
 
-    it('should redirect to telegram file url with 302', async () => {
+    it('should proxy the telegram file body with 200 (no token leak)', async () => {
       mockFindByPublicId.mockImplementationOnce(async () => ({
         publicId: 'test-id',
         telegramFileId: 'tg-file-id',
@@ -187,13 +187,31 @@ describe('File Route Handlers', () => {
         updatedAt: new Date('2026-05-18T00:00:00.000Z'),
       }));
 
-      const req = requestWithPublicId('http://localhost:4000/f/test-id', 'test-id');
-      const res = await handleFileRedirect(req);
+      const fetchCalls: string[] = [];
+      const originalFetch = globalThis.fetch;
+      globalThis.fetch = (async (url: string | URL | Request) => {
+        fetchCalls.push(String(url));
+        return new Response('fake-image-bytes', {
+          status: 200,
+          headers: { 'content-type': 'image/jpeg' },
+        });
+      }) as typeof fetch;
+      try {
+        const req = requestWithPublicId('http://localhost:4000/f/test-id', 'test-id');
+        const res = await handleFileRedirect(req);
 
-      expect(res.status).toBe(302);
-      expect(res.headers.get('Location')).toBe(
-        'https://api.telegram.org/file/bot123456:ABC-DEF/photos/file_0.jpg',
-      );
+        expect(res.status).toBe(200);
+        expect(res.headers.get('Location')).toBeNull();
+        expect(res.headers.get('Content-Type')).toContain('image/jpeg');
+        expect(await res.text()).toBe('fake-image-bytes');
+        // The bot token must only go to Telegram server-side, never to the client.
+        expect(fetchCalls).toHaveLength(1);
+        expect(fetchCalls[0]).toBe(
+          'https://api.telegram.org/file/bot123456:ABC-DEF/photos/file_0.jpg',
+        );
+      } finally {
+        globalThis.fetch = originalFetch;
+      }
     });
 
     it('should return 500 on database or external errors', async () => {
