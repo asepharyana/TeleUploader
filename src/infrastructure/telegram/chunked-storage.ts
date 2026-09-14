@@ -12,6 +12,7 @@ import type { RangeParseResult } from '../../interfaces/s3/range';
 import { type CompressionAlgorithm, maybeCompressChunk } from '../../shared/utils/compress';
 import { computeHash } from '../../shared/utils/file';
 import { asSafeChunkSize } from '../../shared/utils/validation';
+import { buildTelegramFileUrl } from './file-url';
 
 /**
  * Metadata about a single uploaded chunk (part) stored in Telegram.
@@ -237,7 +238,7 @@ export class ChunkedStorage {
         const fileInfo = await this.telegramService.getFileInfo(part.telegramFileId);
         return {
           part,
-          url: `https://api.telegram.org/file/bot${fileInfo.bot_token}/${fileInfo.file_path}`,
+          url: buildTelegramFileUrl(fileInfo.file_path, fileInfo.bot_token),
         };
       }),
     );

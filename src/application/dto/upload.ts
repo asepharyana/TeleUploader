@@ -1,4 +1,12 @@
 /**
+ * Deduplication policy for the upload file use case.
+ * - `hash`: look up an existing record by content SHA-256 first (default).
+ * - `bucket-key`: idempotent lookup by `(bucketId, s3Key)`; never re-uploads.
+ * - `none`: store unconditionally.
+ */
+export type UploadDedupPolicy = 'hash' | 'bucket-key' | 'none';
+
+/**
  * Input for the upload file use case.
  * Carries all metadata needed to persist an uploaded file,
  * including its temporary location on disk and optional bucket/S3 context.a
@@ -12,8 +20,11 @@ export interface UploadInput {
   fileName: string;
   /** MIME type detected from content inspection or request header */
   mimeType: string;
-  /** High-level file category (e.g. "document", "photo", "video") */
-  fileType: string;
+  /**
+   * High-level file category (e.g. "document", "photo", "video").
+   * Optional — when omitted the use case derives it from MIME type + file name.
+   */
+  fileType?: string;
   /** File size in bytes */
   sizeBytes: number;
   /** Telegram user ID of the uploader; 0 when unknown or system */
@@ -22,6 +33,15 @@ export interface UploadInput {
   bucketId?: string | null;
   /** Object key within the bucket for S3-compatible storage; null when un-bucketed */
   s3Key?: string | null;
+  /** Deduplication policy; defaults to `'hash'` when omitted */
+  dedup?: UploadDedupPolicy;
+  /** Prefix for chunked part file names; defaults to `direct-<hash16>` */
+  partPrefix?: string;
+  /**
+   * First bytes of the file for magic-byte detection.
+   * When omitted the use case reads them from `tempPath`.
+   */
+  signatureBuffer?: Buffer;
 }
 
 /**
@@ -43,4 +63,6 @@ export interface UploadOutput {
   createdAt: Date;
   /** Public download URL */
   downloadUrl: string;
+  /** SHA-256 hex digest of the stored content */
+  fileHash: string | null;
 }

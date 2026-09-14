@@ -1,17 +1,31 @@
-import { createReadStream } from 'node:fs';
-import { nanoid } from 'nanoid';
-import { buildNewFile } from '../../../domain/entities/file-factory';
+import { createUploadFileUseCase } from '../../../application/use-cases/upload-file';
 import { config } from '../../../env';
-import { bucketRepository, chunkedStorage, fileRepository } from '../../../infrastructure/di';
-import { botPool } from '../../../infrastructure/telegram/bot-pool';
-import logger from '../../../shared/logger/index';
 import {
-  cleanupTempFile,
-  DEFAULT_FILE_TYPE,
-  ensureExtension,
-  getErrorMessage,
-} from '../../../shared/utils/file';
+  bucketRepository,
+  chunkedStorage,
+  fileRepository,
+  telegramService,
+} from '../../../infrastructure/di';
+import { buildTelegramFileUrl } from '../../../infrastructure/telegram/file-url';
+import { sanitizeFilenameHeader } from '../../../shared/http/filename';
+import logger from '../../../shared/logger/index';
+import { getErrorMessage } from '../../../shared/utils/file';
 import { streamToTemp } from '../../../shared/utils/temp-stream';
+
+/** Lazily built upload use case wired to the DI singletons. */
+const getUploadUseCase = () =>
+  createUploadFileUseCase({
+    fileRepo: fileRepository,
+    telegramService,
+    chunkedStorage,
+    config: {
+      baseUrl: config.baseUrl,
+      telegramChunkSizeBytes: config.telegramChunkSizeBytes,
+      storageChatId: config.storageChatId,
+      compressChunkedUploads: config.compressChunkedUploads,
+      chunkCompressionMinSizeBytes: config.chunkCompressionMinSizeBytes,
+    },
+  });
 
 /**
  * Route parameters extracted from the URL path.
@@ -170,73 +184,27 @@ export const handleUploadObjectV1 = async (
 
   const key = (formData.get('key') as string) || file.name;
   const streamed = await streamToTemp(file.stream().getReader(), { prefix: '/tmp/filedrop-web-' });
-  const { fileName: finalFileName, mimeType } = ensureExtension(
-    key.split('/').pop() || 'file',
-    streamed.signatureBuffer,
-    file.type || 'application/octet-stream',
-  );
 
-  const partFileNamePrefix = `s3-${bucket.name}-${key.replace(/\//g, '_')}`;
-
-  if (streamed.sizeBytes > config.telegramChunkSizeBytes) {
-    const uploadedFile = await chunkedStorage.storeFileInTelegramChunks({
-      tempPath: streamed.tempPath,
-      partFileNamePrefix,
-      fileName: finalFileName,
-      mimeType,
-      sizeBytes: streamed.sizeBytes,
-      fileType: DEFAULT_FILE_TYPE,
-      uploaderId: 0,
-      bucketId: bucket.id,
-      s3Key: key,
-    });
-    await cleanupTempFile(streamed.tempPath);
-    return json(
-      {
-        key,
-        size: streamed.sizeBytes,
-        etag: streamed.fileHash,
-        downloadUrl: `${config.baseUrl}/f/${uploadedFile.publicId}`,
-      },
-      201,
-    );
-  }
-
-  const forwardResult = await botPool.forwardToStorage(
-    createReadStream(streamed.tempPath),
-    partFileNamePrefix,
-    'document',
-  );
-
-  const publicId = nanoid();
-
-  await fileRepository.create(
-    buildNewFile({
-      publicId,
-      telegramFileId: forwardResult.telegramFileId,
-      telegramFileUniqueId: forwardResult.telegramFileUniqueId,
-      storageChatId: config.storageChatId,
-      storageMessageId: forwardResult.storageMessageId,
-      fileName: finalFileName,
-      mimeType,
-      sizeBytes: streamed.sizeBytes,
-      fileType: DEFAULT_FILE_TYPE,
-      uploaderId: 0,
-      fileHash: streamed.fileHash,
-      bucketId: bucket.id,
-      s3Key: key,
-      storageBackend: 'telegram',
-    }),
-  );
-
-  await cleanupTempFile(streamed.tempPath);
+  const output = await getUploadUseCase()({
+    tempPath: streamed.tempPath,
+    fileHash: streamed.fileHash,
+    fileName: key.split('/').pop() || 'file',
+    mimeType: file.type || 'application/octet-stream',
+    sizeBytes: streamed.sizeBytes,
+    uploaderId: 0,
+    bucketId: bucket.id,
+    s3Key: key,
+    dedup: 'none',
+    partPrefix: `s3-${bucket.name}-${key.replace(/\//g, '_')}`,
+    signatureBuffer: streamed.signatureBuffer,
+  });
 
   return json(
     {
       key,
-      size: streamed.sizeBytes,
-      etag: streamed.fileHash,
-      downloadUrl: `${config.baseUrl}/f/${publicId}`,
+      size: output.sizeBytes,
+      etag: output.fileHash,
+      downloadUrl: output.downloadUrl,
     },
     201,
   );
@@ -260,14 +228,15 @@ export const handleDeleteObjectV1 = async (
 };
 
 /**
- * Downloads (or redirects to) an object from a bucket.
+ * Downloads (proxies) an object from a bucket.
  *
  * For chunked objects, builds a streaming response. For regular Telegram
- * objects, issues a 302 redirect to the Telegram CDN URL.
+ * objects, proxies the Telegram CDN body (200 with the file body) so the
+ * bot token never leaks to clients via a redirect URL.
  *
  * @param _req - The incoming HTTP request (unused).
  * @param params - Route parameters containing the bucket name and object key.
- * @returns A redirect or streaming response, or a JSON error.
+ * @returns A streaming response with the file body, or a JSON error.
  */
 export const handleDownloadObjectV1 = async (
   _req: Request,
@@ -284,10 +253,54 @@ export const handleDownloadObjectV1 = async (
     return chunkedStorage.createChunkedObjectResponse({ file, range, reqId: '' });
   }
 
-  const fileInfo = await botPool.getFileInfo(file.telegramFileId);
-  const redirectUrl = `https://api.telegram.org/file/bot${fileInfo.bot_token}/${fileInfo.file_path}`;
+  const fileInfo = await telegramService.getFileInfo(file.telegramFileId);
+  const telegramUrl = buildTelegramFileUrl(fileInfo.file_path, fileInfo.bot_token);
 
-  return new Response(null, { status: 302, headers: { Location: redirectUrl } });
+  const corsHeaders: Record<string, string> = {
+    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Expose-Headers': 'Content-Disposition, Content-Length, Accept-Ranges',
+    'Access-Control-Allow-Methods': 'GET, HEAD, OPTIONS',
+    'Access-Control-Allow-Headers': 'Range, Content-Type',
+    Vary: 'Origin',
+  };
+
+  try {
+    const upstream = await fetch(telegramUrl);
+    if (!upstream.ok) {
+      logger.error('Web API object download failed', {
+        bucket: bucket.name,
+        key: params.key,
+        status: upstream.status,
+      });
+      return Response.json(
+        { error: 'Upstream download failed' },
+        { status: upstream.status === 404 ? 404 : 502, headers: corsHeaders },
+      );
+    }
+
+    const upstreamHeaders = new Headers(upstream.headers);
+    return new Response(upstream.body, {
+      status: 200,
+      headers: {
+        'Content-Type':
+          file.mimeType || upstreamHeaders.get('content-type') || 'application/octet-stream',
+        'Content-Disposition': `attachment; filename="${sanitizeFilenameHeader(file.fileName)}"`,
+        'Content-Length': String(file.sizeBytes ?? 0),
+        'Cache-Control': 'public, max-age=300',
+        ...corsHeaders,
+      },
+    });
+  } catch (error: unknown) {
+    logger.error('Web API object proxy error', {
+      bucket: bucket.name,
+      key: params.key,
+      error: getErrorMessage(error),
+    });
+    return Response.json(
+      { error: 'Upstream download failed' },
+      { status: 502, headers: corsHeaders },
+    );
+  }
 };
 
 /**

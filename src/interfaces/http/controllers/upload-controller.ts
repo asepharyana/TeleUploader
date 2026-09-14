@@ -1,6 +1,5 @@
-import { Readable } from 'node:stream';
 import { nanoid } from 'nanoid';
-import { buildNewFile } from '../../../domain/entities/file-factory';
+import { createUploadFileUseCase } from '../../../application/use-cases/upload-file';
 import { config } from '../../../env';
 import { chunkedStorage, fileRepository, telegramService } from '../../../infrastructure/di';
 import logger from '../../../shared/logger/index';
@@ -8,7 +7,6 @@ import { metricsCollector } from '../../../shared/metrics/index';
 import {
   buildUploadResponse,
   checkFileSize,
-  cleanupTempFile,
   computeHash,
   ensureExtension,
   extractMimeType,
@@ -16,14 +14,7 @@ import {
   getFileType,
 } from '../../../shared/utils/file';
 import { streamToTemp } from '../../../shared/utils/temp-stream';
-
-/** Prepared upload metadata before submission to storage. */
-interface PreparedUpload {
-  tempPath: string;
-  fileHash: string;
-  sizeBytes: number;
-  signatureBuffer: Buffer;
-}
+import { JsonUploadPayloadSchema } from '../../../shared/validation/schemas';
 
 /**
  * Maximum allowed size (in bytes) for a base64 JSON upload.
@@ -35,15 +26,20 @@ const JSON_UPLOAD_LIMIT_BYTES = 50 * 1024 * 1024;
 /** Number of leading bytes read for magic-byte / signature detection. */
 const SIGNATURE_BYTES = 16;
 
-/**
- * Payload structure accepted by the JSON upload endpoint.
- */
-interface JsonUploadPayload {
-  /** Base64-encoded file data (optionally with a data URI prefix). */
-  file?: unknown;
-  /** Optional file name. */
-  fileName?: string;
-}
+/** Lazily built upload use case wired to the DI singletons. */
+const getUploadUseCase = () =>
+  createUploadFileUseCase({
+    fileRepo: fileRepository,
+    telegramService,
+    chunkedStorage,
+    config: {
+      baseUrl: config.baseUrl,
+      telegramChunkSizeBytes: config.telegramChunkSizeBytes,
+      storageChatId: config.storageChatId,
+      compressChunkedUploads: config.compressChunkedUploads,
+      chunkCompressionMinSizeBytes: config.chunkCompressionMinSizeBytes,
+    },
+  });
 
 /**
  * Parses a base64-encoded file string, optionally stripping the data URI
@@ -99,58 +95,12 @@ const rejectOversizedRequest = (req: Request): Response | null => {
 };
 
 /**
- * Streams a multipart `File` to a temporary file on disk while computing
- * its SHA-256 hash and extracting the signature (first 16 bytes).
- *
- * Delegates to the shared {@link streamToTemp} utility.
- *
- * @param file - The multipart `File` object.
- * @param maxSizeBytes - Maximum allowed file size; an error is thrown if
- *                       the stream exceeds this limit.
- * @returns A fully prepared upload descriptor with hash, size, and temp path.
- * @throws {Error} When the file size exceeds `maxSizeBytes`.
- */
-const streamFileToTemp = async (file: File, maxSizeBytes: number): Promise<PreparedUpload> => {
-  const result = await streamToTemp(file.stream().getReader(), { maxSizeBytes });
-  return result;
-};
-
-/**
- * Writes an in-memory buffer to a temporary file on disk.
- *
- * Used for base64 JSON uploads where the decoded data is already in a Buffer.
- *
- * @param fileBuffer - The decoded file content.
- * @param fileHash - Pre-computed SHA-256 hex digest.
- * @returns A prepared upload descriptor.
- */
-const writeBufferToTemp = async (fileBuffer: Buffer, fileHash: string): Promise<PreparedUpload> => {
-  const tempPath = `/tmp/filedrop-${nanoid()}`;
-  try {
-    await Bun.write(tempPath, fileBuffer);
-    return {
-      tempPath,
-      fileHash,
-      sizeBytes: fileBuffer.byteLength,
-      signatureBuffer: fileBuffer.subarray(0, SIGNATURE_BYTES),
-    };
-  } catch (error) {
-    await cleanupTempFile(tempPath);
-    throw error;
-  }
-};
-
-/**
  * Handles a multipart/form-data file upload.
  *
  * Steps:
  * 1. Parse the multipart form and extract the file.
  * 2. Stream the file to a temp location, computing its hash.
- * 3. Check for deduplication by content hash.
- * 4. Determine the MIME type, file name, and Telegram file type.
- * 5. Validate file size limits.
- * 6. Upload to Telegram (chunked or single-message).
- * 7. Return the upload response JSON.
+ * 3. Delegate to the upload use case (dedup `hash`) and return its response.
  *
  * @param req - The incoming HTTP request with a multipart body.
  * @returns A JSON response with the uploaded file metadata.
@@ -170,70 +120,25 @@ const handleMultipartUpload = async (req: Request): Promise<Response> => {
       return Response.json({ error: 'File size exceeds upload limit' }, { status: 413 });
     }
 
-    const prepared = await streamFileToTemp(file, config.maxRequestBodyBytes);
-
-    const existingFile = await fileRepository.findByHash(prepared.fileHash);
-    if (existingFile) {
-      await cleanupTempFile(prepared.tempPath);
-      return Response.json(buildUploadResponse(existingFile, config.baseUrl), { status: 200 });
-    }
+    const prepared = await streamToTemp(file.stream().getReader(), {
+      maxSizeBytes: config.maxRequestBodyBytes,
+    });
 
     const rawMimeType = file.type || extractMimeType({}, req) || 'application/octet-stream';
-    const { fileName: finalFileName, mimeType } = ensureExtension(
+    const output = await getUploadUseCase()({
+      tempPath: prepared.tempPath,
+      fileHash: prepared.fileHash,
       fileName,
-      prepared.signatureBuffer,
-      rawMimeType,
-    );
-    const fileType = getFileType(mimeType, finalFileName);
+      mimeType: rawMimeType,
+      sizeBytes: prepared.sizeBytes,
+      uploaderId: 0,
+      dedup: 'hash',
+      signatureBuffer: prepared.signatureBuffer,
+    });
 
-    if (!checkFileSize(prepared.sizeBytes, fileType)) {
-      await cleanupTempFile(prepared.tempPath);
-      return Response.json({ error: `File size exceeds ${fileType} limit` }, { status: 400 });
-    }
-
-    if (prepared.sizeBytes > config.telegramChunkSizeBytes) {
-      const uploadedFile = await chunkedStorage.storeFileInTelegramChunks({
-        tempPath: prepared.tempPath,
-        partFileNamePrefix: `direct-${prepared.fileHash?.slice(0, 16) || 'upload'}`,
-        fileName: finalFileName,
-        mimeType,
-        sizeBytes: prepared.sizeBytes,
-        fileType,
-        uploaderId: 0,
-      });
-      await cleanupTempFile(prepared.tempPath);
-      return Response.json(buildUploadResponse(uploadedFile, config.baseUrl), { status: 200 });
-    }
-
-    // Single-message — direct to Telegram storage
-    const forwardResult = await telegramService.forwardToStorage(
-      Readable.from(Bun.file(prepared.tempPath).stream()),
-      finalFileName,
-      fileType,
-    );
-
-    const publicId = nanoid();
-
-    const createdFile = await fileRepository.create(
-      buildNewFile({
-        publicId,
-        telegramFileId: forwardResult.telegramFileId,
-        telegramFileUniqueId: forwardResult.telegramFileUniqueId,
-        storageChatId: config.storageChatId,
-        storageMessageId: forwardResult.storageMessageId,
-        fileName: finalFileName,
-        mimeType,
-        sizeBytes: prepared.sizeBytes,
-        fileType,
-        storageBackend: 'telegram',
-        uploaderId: 0,
-        fileHash: prepared.fileHash,
-      }),
-    );
-
-    await cleanupTempFile(prepared.tempPath);
-
-    return Response.json(buildUploadResponse(createdFile, config.baseUrl), { status: 200 });
+    // The use case is the single source of truth for stored metadata —
+    // build the response directly from its output, not a synthetic record.
+    return Response.json(buildUploadResponse(output, config.baseUrl), { status: 200 });
   } catch (error: unknown) {
     const message = getErrorMessage(error);
     logger.error('Multipart upload error', { error: message });
@@ -246,28 +151,23 @@ const handleMultipartUpload = async (req: Request): Promise<Response> => {
  * base64-encoded string.
  *
  * Steps:
- * 1. Parse the JSON body and extract the base64 file data.
- * 2. Decode and estimate the file size; reject if too large for JSON.
- * 3. Write the decoded buffer to a temp file.
- * 4. Check deduplication by content hash.
- * 5. Determine MIME type, file name, and Telegram file type.
- * 6. Validate file size limits.
- * 7. Upload to Telegram (chunked or single-message).
- * 8. Return the upload response JSON.
+ * 1. Parse and validate the JSON body (must include base64 `file`).
+ * 2. Decode, check size limits, and stage to a temp file.
+ * 3. Delegate to the upload use case (dedup `hash`) and return its response.
  *
  * @param req - The incoming HTTP request with a JSON body.
  * @returns A JSON response with the uploaded file metadata.
  */
 const handleJSONUpload = async (req: Request): Promise<Response> => {
   try {
-    const { file, fileName = 'file' } = (await req.json()) as JsonUploadPayload;
-
-    if (!file || typeof file !== 'string') {
+    const parsed = JsonUploadPayloadSchema.safeParse(await req.json());
+    if (!parsed.success) {
       return Response.json(
         { error: 'Invalid JSON. Must include "file" (base64) and optional "fileName"' },
         { status: 400 },
       );
     }
+    const { file, fileName } = parsed.data;
 
     const { base64Data, mimeType: rawMimeType } = parseBase64File(file);
     const estimatedSizeBytes = Math.floor((base64Data.length * 3) / 4);
@@ -287,11 +187,6 @@ const handleJSONUpload = async (req: Request): Promise<Response> => {
     const fileBytes = Buffer.from(base64Data, 'base64');
     const hash = computeHash(fileBytes);
 
-    const existingFile = await fileRepository.findByHash(hash);
-    if (existingFile) {
-      return Response.json(buildUploadResponse(existingFile, config.baseUrl), { status: 200 });
-    }
-
     const fileTypeRaw = getFileType(rawMimeType, fileName);
     const fileType = fileTypeRaw === 'application' ? 'document' : fileTypeRaw;
 
@@ -301,51 +196,20 @@ const handleJSONUpload = async (req: Request): Promise<Response> => {
       return Response.json({ error: `File size exceeds ${fileType} limit` }, { status: 400 });
     }
 
-    const prepared = await writeBufferToTemp(fileBytes, hash);
+    const tempPath = `/tmp/teleuploader-${nanoid()}`;
+    await Bun.write(tempPath, fileBytes);
+    const output = await getUploadUseCase()({
+      tempPath,
+      fileHash: hash,
+      fileName: finalFileName,
+      mimeType,
+      sizeBytes: fileBytes.byteLength,
+      uploaderId: 0,
+      dedup: 'hash',
+      signatureBuffer: fileBytes.subarray(0, SIGNATURE_BYTES),
+    });
 
-    if (prepared.sizeBytes > config.telegramChunkSizeBytes) {
-      const uploadedFile = await chunkedStorage.storeFileInTelegramChunks({
-        tempPath: prepared.tempPath,
-        partFileNamePrefix: `direct-${prepared.fileHash?.slice(0, 16) || 'json'}`,
-        fileName: finalFileName,
-        mimeType,
-        sizeBytes: prepared.sizeBytes,
-        fileType,
-        uploaderId: 0,
-      });
-      await cleanupTempFile(prepared.tempPath);
-      return Response.json(buildUploadResponse(uploadedFile, config.baseUrl), { status: 200 });
-    }
-
-    // Single-message — direct to Telegram storage
-    const forwardResult = await telegramService.forwardToStorage(
-      Readable.from(Bun.file(prepared.tempPath).stream()),
-      finalFileName,
-      fileType,
-    );
-
-    const publicId = nanoid();
-
-    const createdFile = await fileRepository.create(
-      buildNewFile({
-        publicId,
-        telegramFileId: forwardResult.telegramFileId,
-        telegramFileUniqueId: forwardResult.telegramFileUniqueId,
-        storageChatId: config.storageChatId,
-        storageMessageId: forwardResult.storageMessageId,
-        fileName: finalFileName,
-        mimeType,
-        sizeBytes: prepared.sizeBytes,
-        fileType,
-        storageBackend: 'telegram',
-        uploaderId: 0,
-        fileHash: prepared.fileHash,
-      }),
-    );
-
-    await cleanupTempFile(prepared.tempPath);
-
-    return Response.json(buildUploadResponse(createdFile, config.baseUrl), { status: 200 });
+    return Response.json(buildUploadResponse(output, config.baseUrl), { status: 200 });
   } catch (error: unknown) {
     const message = getErrorMessage(error);
     logger.error('JSON upload error', { error: message });

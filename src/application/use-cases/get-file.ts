@@ -1,6 +1,7 @@
 import type { File } from '../../domain/entities/file';
 import type { IFileRepository } from '../../domain/ports/file-repository';
 import type { ITelegramService, TelegramFileInfo } from '../../domain/ports/telegram-service';
+import { buildTelegramFileUrl } from '../../infrastructure/telegram/file-url';
 
 /**
  * Result type for a simple file-info lookup.
@@ -43,7 +44,13 @@ export interface RedirectRetrieval {
   type: 'redirect';
   /** The resolved file entity. */
   file: File;
-  /** Full Telegram CDN URL to redirect the client to. */
+  /**
+   * Full Telegram CDN URL to redirect the client to.
+   *
+   * @deprecated No controller redirects anymore — downloads are proxied
+   * server-side via `buildTelegramFileUrl` so the bot token never reaches
+   * clients. Kept for API compatibility; do not expose to clients.
+   */
   redirectUrl: string;
   /** Cached Telegram file metadata. */
   fileInfo: TelegramFileInfo;
@@ -167,9 +174,10 @@ export function createGetFileUseCase(deps: GetFileUseCaseDeps) {
       return { type: 'archive-entry', file, archiveInfo, entryName: archiveEntryName };
     }
 
-    // Regular file — resolve Telegram CDN path for a redirect
+    // Regular file — resolve Telegram CDN path (server-side fetch only;
+    // the URL embeds the bot token and must never be exposed to clients).
     const fileInfo = await deps.telegramService.getFileInfo(file.telegramFileId);
-    const redirectUrl = `https://api.telegram.org/file/bot${fileInfo.bot_token}/${fileInfo.file_path}`;
+    const redirectUrl = buildTelegramFileUrl(fileInfo.file_path, fileInfo.bot_token);
 
     return { type: 'redirect', file, redirectUrl, fileInfo };
   };

@@ -1,7 +1,5 @@
 import { createReadStream } from 'node:fs';
 import { nanoid } from 'nanoid';
-import type { TelegramFileInfo } from '../../../domain/ports/telegram-service';
-import { fileInfoCache } from '../../../infrastructure/cache/index';
 import { chunkedStorage, fileRepository } from '../../../infrastructure/di';
 import { botPool } from '../../../infrastructure/telegram/bot-pool';
 import { buildTelegramFileUrl } from '../../../infrastructure/telegram/file-url';
@@ -22,33 +20,6 @@ type RequestWithParams = Request & {
 };
 
 /**
- * Resolves Telegram file metadata for a given file ID, using the in-memory
- * cache to avoid repeated API calls to Telegram.
- *
- * @param telegramFileId - The Telegram file identifier to resolve.
- * @param publicId - The public file ID (used for logging).
- * @returns The resolved Telegram file info.
- */
-const getTelegramFileInfo = async (
-  telegramFileId: string,
-  publicId: string,
-): Promise<TelegramFileInfo> => {
-  const cacheKey = `file_info_${telegramFileId}`;
-  const cached = fileInfoCache.get(cacheKey) as TelegramFileInfo | null;
-
-  if (cached) {
-    logger.debug('File info from cache', { publicId, cacheKey });
-    return cached;
-  }
-
-  const fileInfo = await botPool.getFileInfo(telegramFileId);
-  fileInfoCache.set(cacheKey, fileInfo);
-  logger.debug('File info cached', { publicId, cacheKey });
-
-  return fileInfo;
-};
-
-/**
  * Returns a JSON error response with the given status code and message.
  *
  * @param status - HTTP status code.
@@ -65,7 +36,8 @@ const fail = (status: number, error: string): Response => Response.json({ error 
  * - **chunked** files are streamed via the chunked-object response builder.
  * - **archive-entry** files are extracted from a Telegram-stored zip archive
  *   and streamed as a single file.
- * - **regular** files are redirected to the Telegram CDN URL (302).
+ * - **regular** files are proxied from the Telegram CDN (200 with the file
+ *   body, so browser fetch/XHR playback never hits Telegram CORS).
  *
  * @param req - The incoming HTTP request with a `public_id` route parameter.
  * @returns A redirect or streaming response, or a JSON error.
@@ -99,7 +71,7 @@ export const handleFileRedirect = async (req: RequestWithParams): Promise<Respon
     const archiveEntryName = file.archiveEntryName;
     if (archiveEntryName) {
       const archiveFileId = file.archiveTelegramFileId || file.telegramFileId;
-      const archiveInfo = await getTelegramFileInfo(archiveFileId, publicId);
+      const archiveInfo = await botPool.getFileInfo(archiveFileId);
       const archiveResponse = await fetch(
         buildTelegramFileUrl(archiveInfo.file_path, archiveInfo.bot_token),
       );
@@ -143,7 +115,7 @@ export const handleFileRedirect = async (req: RequestWithParams): Promise<Respon
       });
     }
 
-    const fileInfo = await getTelegramFileInfo(file.telegramFileId, publicId);
+    const fileInfo = await botPool.getFileInfo(file.telegramFileId);
     const telegramUrl = buildTelegramFileUrl(fileInfo.file_path, fileInfo.bot_token);
 
     // CORS headers shared across all delivery modes — public file CDN.

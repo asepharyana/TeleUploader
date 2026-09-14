@@ -4,8 +4,7 @@ import { buildNewFile } from '../../domain/entities/file-factory';
 import type { IFileRepository } from '../../domain/ports/file-repository';
 import type { ITelegramService } from '../../domain/ports/telegram-service';
 import { config } from '../../env';
-import { DrizzleFileRepository } from '../../infrastructure/persistence/repositories/file-repository';
-import { botPool } from '../../infrastructure/telegram/bot-pool';
+import { fileRepository, telegramService } from '../../infrastructure/di';
 import logger from '../../shared/logger/index';
 import {
   checkFileSize,
@@ -75,9 +74,9 @@ const replyWithDownloadUrl = async (ctx: BotContext, publicId: string): Promise<
  *
  * @param deps - Optional external dependencies for testing or DI override.
  * @param deps.telegramService - The Telegram service used to forward files to
- *   the storage channel. Defaults to the singleton BotPool instance.
+ *   the storage channel. Defaults to the DI singleton.
  * @param deps.fileRepo - The file repository used for deduplication queries
- *   and persisting new file records. Defaults to a new DrizzleFileRepository.
+ *   and persisting new file records. Defaults to the DI singleton.
  * @returns The launched Telegraf bot instance, suitable for graceful shutdown
  *   via `bot.stop(signal)`.
  */
@@ -89,8 +88,8 @@ export async function startBot(
     fileRepo?: IFileRepository;
   } = {},
 ): Promise<Telegraf<Context>> {
-  const telegramService = deps.telegramService ?? botPool;
-  const fileRepo = deps.fileRepo ?? new DrizzleFileRepository();
+  const telegramSvc = deps.telegramService ?? telegramService;
+  const fileRepo = deps.fileRepo ?? fileRepository;
 
   try {
     const bot = new Telegraf(config.botTokens[0]);
@@ -147,7 +146,7 @@ export async function startBot(
             return;
           }
 
-          const result = await telegramService.forwardToStorage(file_id, fileName, fileType);
+          const result = await telegramSvc.forwardToStorage(file_id, fileName, fileType);
           const publicId = nanoid();
 
           await fileRepo.create(
