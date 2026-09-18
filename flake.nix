@@ -27,7 +27,7 @@
         # TeleUploader package
         teleuploader = pkgs.stdenvNoCC.mkDerivation rec {
           pname = "teleuploader";
-          version = "1.2.2";
+          version = "1.2.3";
 
           src = ./.;
 
