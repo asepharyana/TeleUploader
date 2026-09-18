@@ -67,3 +67,6 @@ AGENTS.md
 
 # Codex local configuration
 .codex/
+
+# Planning files (per-repo)
+.planning/
