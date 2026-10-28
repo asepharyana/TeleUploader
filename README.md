@@ -152,3 +152,5 @@ there was nothing to release, so no version was derived and no image was tagged.
 -->
 <!-- review schema smoke test -->
 <!-- flat schema smoke -->
+
+<!-- e2e format repair check -->
