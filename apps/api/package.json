@@ -9,7 +9,7 @@
   },
   "scripts": {
     "dev": "tsx watch src/index.ts",
-    "build": "BANNER=$(cat scripts/esbuild-banner.js) && esbuild src/index.ts --bundle --keep-names --platform=node --target=node22 --format=esm \"--banner:js=$BANNER\" --outfile=dist/index.js && esbuild src/infrastructure/persistence/drizzle/migrate.ts --bundle --keep-names --platform=node --target=node22 --format=esm \"--banner:js=$BANNER\" --outfile=dist/migrate.js && esbuild src/infrastructure/db/seed.ts --bundle --keep-names --platform=node --target=node22 --format=esm \"--banner:js=$BANNER\" --outfile=dist/seed.js",
+    "build": "BANNER=$(cat scripts/esbuild-banner.js) && for e in \"src/index.ts:index\" \"src/infrastructure/persistence/drizzle/migrate.ts:migrate\" \"src/infrastructure/db/seed.ts:seed\"; do esbuild \"${e%%:*}\" --bundle --keep-names --platform=node --target=node22 --format=esm \"--banner:js=$BANNER\" --outfile=\"dist/${e##*:}.js\" || exit 1; done",
     "start": "NODE_ENV=production node dist/index.js",
     "db:migrate": "node dist/migrate.js",
     "db:seed": "node dist/seed.js",
@@ -42,9 +42,9 @@
     "zod": "^4.6.7"
   },
   "devDependencies": {
-    "@aws-sdk/client-s3": "^3.1157.0",
-    "@biomejs/biome": "^2.6.3",
-    "@types/node": "^26.6.5",
+    "@aws-sdk/client-s3": "^3.1160.0",
+    "@biomejs/biome": "^2.6.4",
+    "@types/node": "^26.6.6",
     "drizzle-kit": "^0.31.10",
     "esbuild": "^0.28.2",
     "tsx": "^4.20.3",
