@@ -19,7 +19,7 @@
     "prepare": "husky"
   },
   "devDependencies": {
-    "@moonrepo/cli": "^2.6.4",
+    "@moonrepo/cli": "^2.6.5",
     "husky": "^9.1.7"
   }
 }
