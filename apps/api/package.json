@@ -1,15 +1,15 @@
 {
   "name": "filedrop",
   "version": "1.2.9",
+  "private": true,
   "description": "Telegram file uploader backend",
   "type": "module",
-  "private": true,
   "engines": {
     "node": "^22.12.0 || ^24.0.0 || >=26.0.0"
   },
   "scripts": {
     "dev": "tsx watch src/index.ts",
-    "build": "BANNER=$(cat scripts/esbuild-banner.js) && esbuild src/index.ts --bundle --keep-names --platform=node --target=node22 --format=esm \"--banner:js=$BANNER\" --outfile=dist/index.js && esbuild src/infrastructure/persistence/drizzle/migrate.ts --bundle --keep-names --platform=node --target=node22 --format=esm \"--banner:js=$BANNER\" --outfile=dist/migrate.js && esbuild src/infrastructure/db/seed.ts --bundle --keep-names --platform=node --target=node22 --format=esm \"--banner:js=$BANNER\" --outfile=dist/seed.js",
+    "build": "BANNER=$(cat scripts/esbuild-banner.js) && ESBUILD_FLAGS=\"--bundle --keep-names --platform=node --target=node22 --format=esm\" && esbuild src/index.ts $ESBUILD_FLAGS \"--banner:js=$BANNER\" --outfile=dist/index.js && esbuild src/infrastructure/persistence/drizzle/migrate.ts $ESBUILD_FLAGS \"--banner:js=$BANNER\" --outfile=dist/migrate.js && esbuild src/infrastructure/db/seed.ts $ESBUILD_FLAGS \"--banner:js=$BANNER\" --outfile=dist/seed.js",
     "start": "NODE_ENV=production node dist/index.js",
     "db:migrate": "node dist/migrate.js",
     "db:seed": "node dist/seed.js",
